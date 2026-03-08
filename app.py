@@ -413,35 +413,35 @@ tabs = st.tabs(["Overview", "Growth", "Harvest&Grading", "Storage&Distrubtion"])
 with tabs[0]:
     render_overview_tab(config=active_cfg, sim_results=sim_results)
 
-    if "Digital Twin" in str(active_cfg.get("sim_mode", "")):
-        with st.expander("Digital Twin: Save Micro weather template", expanded=False):
-            st.caption("Download weather array (Doesn't work on web app).")
+    #if "Digital Twin" in str(active_cfg.get("sim_mode", "")):
+        #with st.expander("Digital Twin: Save Micro weather template", expanded=False):
+         #   st.caption("Download weather array (Doesn't work on web app).")
 
-            default_name = (
-                f"DT_lat{active_cfg.get('lat',0):.4f}_lon{active_cfg.get('lon',0):.4f}_"
-                f"{active_cfg.get('planting_year',0)}_{active_cfg.get('years_to_sim',0)}y"
-            ).replace(":", "_").replace("/", "_")
+          #  default_name = (
+           #     f"DT_lat{active_cfg.get('lat',0):.4f}_lon{active_cfg.get('lon',0):.4f}_"
+            #    f"{active_cfg.get('planting_year',0)}_{active_cfg.get('years_to_sim',0)}y"
+        #    ).replace(":", "_").replace("/", "_")
 
-            template_name = st.text_input("Template name", value=default_name)
+         #   template_name = st.text_input("Template name", value=default_name)
 
-            colA, colB = st.columns([1, 2])
-            with colA:
-                save_pressed = st.button("💾 Save template to WeatherTemplates/templates", type="primary", use_container_width=True)
-            with colB:
-                st.write("Target folder: `WeatherTemplates/templates/`")
+          #  colA, colB = st.columns([1, 2])
+           # with colA:
+            #    save_pressed = st.button("💾 Save template to WeatherTemplates/templates", type="primary", use_container_width=True)
+          #  with colB:
+          #      st.write("Target folder: `WeatherTemplates/templates/`")
 
-            if save_pressed:
-                try:
-                    csv_path, npz_path, json_path = prep.save_weather_template_to_project_folder(
-                        weather_cache,
-                        template_name.strip(),
-                    )
-                except Exception as e:
-                    st.error("Template save failed:")
-                    st.exception(e)
-                else:
-                    st.success("Template saved.")
-                    st.code(f"{npz_path}\n{csv_path}\n{json_path}")
+           # if save_pressed:
+          #      try:
+           #         csv_path, npz_path, json_path = prep.save_weather_template_to_project_folder(
+            #            weather_cache,
+             #           template_name.strip(),
+          #    #      )
+           #     except Exception as e:
+            #        st.error("Template save failed:")
+             #       st.exception(e)
+              #  else:
+              #      st.success("Template saved.")
+               #     st.code(f"{npz_path}\n{csv_path}\n{json_path}")
 
 with tabs[1]:
     render_growth_tab(config=active_cfg, sim_results=sim_results, weather_cache=weather_cache)

@@ -1,33 +1,39 @@
-APPLE_DEM Code Hierarchy
-========================
-APP.py
-
-Pre-processing
---------------
-Pre_processing.py
-
-Discrete Event Simulation (DES)
--------------------------------
-DES/DES_runner.py
-  
-DES/Growth_module.py
- 
-DES/Harvest_Grading_module.py
- 
-DES/Storage_Distribution_module.py
-
-Agent-Based / Policy layer
---------------------------
-ABS/Policy_module.py
- 
-Monte Carlo Simulation (MCS)
-----------------------------
-MCS/MonteCarlo_module.py
- 
-Digital Twin (DTS)
-------------------
-DTS/DigitalTwin_module.py
- 
-Post-processing
----------------
-Post_processing/Post_processing.py
+APPLE_DEM
+│
+├── APP.py
+│
+├── requirements.txt
+│
+├── Pre_processing.py
+│
+├── ABS
+│   └── Policy_module.py
+│
+├── DES
+│   ├── DES_runner.py
+│   ├── Growth_module.py
+│   ├── Harvest_Grading_module.py
+│   ├── Storage_Distribution_module.py
+│   ├── Scenario_module.py
+│   └── Macro_growth.py
+│
+├── DTS
+│   └── DigitalTwin_module.py
+│
+├── MCS
+│   └── MonteCarlo_module.py
+│
+├── Post_processing
+│   └── Post_processing.py
+│
+├── WeatherTemplates
+│   ├── weather_template_io.py
+│   │
+│   ├── templates
+│   │   ├── *.csv
+│   │   ├── *.npz
+│   │   └── *.json
+│   │
+│   └── macro
+│       ├── *.csv
+│       └── *.npz

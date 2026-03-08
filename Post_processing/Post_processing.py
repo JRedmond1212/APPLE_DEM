@@ -176,7 +176,7 @@ def _build_spaghetti_base(mc: pd.DataFrame) -> Dict[str, Any]:
         yaxis_title="Yield (t/ha)",
         hovermode=False,
         height=280,
-        margin=dict(l=40, r=10, t=50, b=35),
+        margin=dict(l=40, r=10, t=50, b=1),
     )
     return fig.to_dict()
 
@@ -313,6 +313,18 @@ def _growth_requested_table(dfy: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 # ============================================================
 # Overview tab (UPDATED) — WASTE + MASS-BASIS FIX:
 #   ✅ "Median bins on trees" uses util["initial_bins_on_trees"] (preferred)
@@ -321,6 +333,10 @@ def _growth_requested_table(dfy: pd.DataFrame) -> pd.DataFrame:
 #      - computed per-run if shared run-id exists
 #      - else fallback sum-of-medians
 #   ✅ Guardrail: waste_total_all is clamped to median initial bins (prevents impossible displays)
+#   ✅ Layout compacted:
+#      - starting inventory legend moved below plot
+#      - utilisation heatmap moved vertical, to the right of metrics
+#      - overall dashboard slightly smaller to better fit one screen
 # ============================================================
 
 from typing import Any, Dict, List, Optional
@@ -398,13 +414,11 @@ def _median_initial_bins(util: pd.DataFrame, year_sel: int) -> Optional[float]:
     if u.empty:
         return None
 
-    # preferred: exact initial bins (pre decay)
     if "initial_bins_on_trees" in u.columns:
         v = pd.to_numeric(u["initial_bins_on_trees"], errors="coerce").dropna()
         if not v.empty:
             return float(v.median())
 
-    # fallback: day0 trees_series (can be lower due to day0 decay removal)
     if "trees_series" in u.columns:
         starts = []
         for vv in u["trees_series"]:
@@ -456,7 +470,6 @@ def _waste_total_all_sources(util: pd.DataFrame, storage: pd.DataFrame, year_sel
     if harvest_col is None and storage_col is None:
         return None
 
-    # try per-run join if possible
     run_id_candidates = ["run_id", "mc_run", "rep", "trial", "sim", "seed", "iteration"]
     shared_id = None
     for c in run_id_candidates:
@@ -478,7 +491,6 @@ def _waste_total_all_sources(util: pd.DataFrame, storage: pd.DataFrame, year_sel
         tot = tot[np.isfinite(tot)]
         return float(np.median(tot)) if tot.size else None
 
-    # fallback sum-of-medians
     total = 0.0
     got = False
 
@@ -536,7 +548,7 @@ def _overview_colored_gradeband_hist(inv_hist: np.ndarray, title: str) -> go.Fig
 
     thr_lines = [thr_p, thr_c2, thr_c1, thr_e]
     ymax = float(np.nanmax(h)) if h.size else 1.0
-    ymax = max(1.0, ymax * 1.10)
+    ymax = max(1.0, ymax * 1.08)
 
     for xthr in thr_lines:
         fig.add_shape(
@@ -551,11 +563,18 @@ def _overview_colored_gradeband_hist(inv_hist: np.ndarray, title: str) -> go.Fig
         barmode="overlay",
         xaxis_title="Quality (0–1)",
         yaxis_title="Bins",
-        height=300,
-        margin=dict(l=55, r=120, t=55, b=55),
+        height=248,
+        margin=dict(l=52, r=12, t=46, b=1),
         hovermode="x unified",
         showlegend=True,
-        legend=dict(orientation="v", x=1.02, xanchor="left", y=1.0, yanchor="top"),
+        legend=dict(
+            orientation="h",
+            x=0.5,
+            xanchor="center",
+            y=-0.22,
+            yanchor="top",
+            title_text="",
+        ),
     )
     fig.update_xaxes(range=[0, 1])
     fig.update_yaxes(range=[0, ymax])
@@ -571,13 +590,17 @@ def _yield_dist_fig(mc: pd.DataFrame, year_sel: int, height: int) -> Optional[go
         return None
     xh, yh = _hist(yld, bins=45)
     fig = go.Figure([go.Bar(x=xh, y=yh)])
-    fig.update_layout(title="Yield distribution", height=int(height), margin=dict(l=55, r=20, t=55, b=55))
+    fig.update_layout(
+        title="Yield distribution",
+        height=int(height),
+        margin=dict(l=52, r=12, t=46, b=1),
+    )
     fig.update_xaxes(title="Yield (t/ha)", range=[0, max(1e-9, float(np.nanmax(xh)) if xh.size else 1.0)])
-    fig.update_yaxes(title="Frequency", range=[0, max(1.0, float(np.nanmax(yh)) * 1.15 if yh.size else 1.0)])
+    fig.update_yaxes(title="Frequency", range=[0, max(1.0, float(np.nanmax(yh)) * 1.12 if yh.size else 1.0)])
     return fig
 
 
-def _util_heatmap_selected_year_horizontal(util: pd.DataFrame, year_sel: int) -> Optional[go.Figure]:
+def _util_heatmap_selected_year_vertical(util: pd.DataFrame, year_sel: int) -> Optional[go.Figure]:
     if util.empty or "season_year" not in util.columns:
         return None
 
@@ -594,16 +617,16 @@ def _util_heatmap_selected_year_horizontal(util: pd.DataFrame, year_sel: int) ->
         ("util_empty", "Empty shuttle"),
     ]
 
-    xs, vals = [], []
+    ys, vals = [], []
     for col, label in stages:
         if col not in u.columns:
             continue
         v = pd.to_numeric(u[col], errors="coerce").dropna()
         med = float(np.clip(v.median(), 0.0, 1.0)) if not v.empty else 0.0
-        xs.append(label)
+        ys.append(label)
         vals.append(med)
 
-    if not xs:
+    if not ys:
         return None
 
     colorscale = [
@@ -615,17 +638,33 @@ def _util_heatmap_selected_year_horizontal(util: pd.DataFrame, year_sel: int) ->
         [1.00, "#D00000"],
     ]
 
-    Z = np.asarray([vals], dtype=float)
+    Z = np.asarray(vals, dtype=float).reshape(-1, 1)
+
     fig = go.Figure(data=go.Heatmap(
-        z=Z, x=xs, y=[""],
-        zmin=0.0, zmax=1.0,
+        z=Z,
+        x=[""],
+        y=ys,
+        zmin=0.0,
+        zmax=1.0,
         colorscale=colorscale,
         hoverongaps=False,
-        colorbar=dict(title="Util"),
+        colorbar=dict(
+            title=dict(text="Util", side="top"),
+            thickness=16,
+            len=0.94,
+            y=0.50,
+            yanchor="middle",
+            x=1.10,
+        ),
     ))
-    fig.update_layout(title="Harvest utilisation (median)", height=160, margin=dict(l=55, r=20, t=55, b=40))
-    fig.update_xaxes(title="")
-    fig.update_yaxes(title="")
+
+    fig.update_layout(
+        title="Harvest utilisation (median)",
+        height=250,
+        margin=dict(l=6, r=42, t=42, b=1),
+    )
+    fig.update_xaxes(title="", showticklabels=False)
+    fig.update_yaxes(title="", automargin=True)
     return fig
 
 
@@ -638,7 +677,7 @@ def _starting_quality_fig(storage_row_med: Optional[Dict[str, Any]]) -> Optional
     inv = np.asarray(inv_hist_week, dtype=float)
     if inv.ndim != 2 or inv.shape[0] <= 0:
         return None
-    return _overview_colored_gradeband_hist(inv[0, :], "Starting inventory quality")
+    return _overview_colored_gradeband_hist(inv[0, :], "Harvest inventory quality")
 
 
 def _estimated_revenue(storage_row_med: Optional[Dict[str, Any]], waste_total_all: Optional[float]) -> Optional[float]:
@@ -699,8 +738,8 @@ def _storage_grade_mix_pie(storage_row_med: Optional[Dict[str, Any]], config: Di
     fig = go.Figure(data=[go.Pie(labels=labels, values=pie_vals, hole=0.55, marker=dict(colors=pie_colors))])
     fig.update_layout(
         title="Storage usage",
-        height=300,
-        margin=dict(l=10, r=10, t=55, b=10),
+        height=248,
+        margin=dict(l=8, r=8, t=42, b=8),
         legend=dict(orientation="v", x=1.02, xanchor="left", y=1.0, yanchor="top"),
     )
     return fig
@@ -751,8 +790,12 @@ def _fillrate_grade_bars(storage_row_med: Optional[Dict[str, Any]], waste_total_
     ]
 
     fig = go.Figure([go.Bar(x=labels, y=values, marker=dict(color=colors))])
-    fig.update_layout(title="Fill rate by grade + waste", yaxis_title="Fill rate(%)", height=280,
-                      margin=dict(l=55, r=15, t=55, b=45))
+    fig.update_layout(
+        title="Fill rate by grade + waste",
+        yaxis_title="Fill rate(%)",
+        height=248,
+        margin=dict(l=52, r=12, t=42, b=38),
+    )
     fig.update_yaxes(range=[0, 100])
     return fig
 
@@ -785,10 +828,15 @@ def _fillrate_weekly_plot(storage_row_med: Optional[Dict[str, Any]]) -> Optional
             line=dict(color=GRADE_COLORS.get(g, None), width=3),
             line_shape="hv",
         ))
-    fig.update_layout(title="Weekly fill rate", xaxis_title="Week", yaxis_title="Fill rate (%)",
-                      height=280, hovermode="x unified",
-                      margin=dict(l=55, r=120, t=55, b=45),
-                      legend=dict(x=1.02, xanchor="left", y=1.0, yanchor="top"))
+    fig.update_layout(
+        title="Weekly fill rate",
+        xaxis_title="Week",
+        yaxis_title="Fill rate (%)",
+        height=248,
+        hovermode="x unified",
+        margin=dict(l=52, r=90, t=42, b=38),
+        legend=dict(x=1.01, xanchor="left", y=1.0, yanchor="top"),
+    )
     fig.update_yaxes(range=[0, 100])
     return fig
 
@@ -807,19 +855,15 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
     storage = _robust_storage_df_any(sim_results)
     storage_row_med = _median_detail_storage_row(sim_results, year_sel)
 
-    # basis: initial bins (preferred)
     initial_bins_med = _median_initial_bins(util, int(year_sel))
-
-    # waste: harvest removed + storage eoy
     waste_total_all = _waste_total_all_sources(util=util, storage=storage, year_sel=int(year_sel))
 
-    # guardrail: waste cannot exceed initial bins basis
     if (waste_total_all is not None and np.isfinite(waste_total_all)
             and initial_bins_med is not None and np.isfinite(initial_bins_med)):
         waste_total_all = float(min(waste_total_all, initial_bins_med))
 
-    row1_h = 460
-    row2_h = 320
+    row1_h = 305
+    row2_h = 248
 
     c1, c2, c3 = st.columns(3, vertical_alignment="top")
 
@@ -828,8 +872,12 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
         if fig_y is None:
             st.info("Yield distribution unavailable.")
         else:
-            st.plotly_chart(fig_y, use_container_width=True, config={"displayModeBar": False},
-                            key=f"ov_yield_dist_{year_sel}")
+            st.plotly_chart(
+                fig_y,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_yield_dist_{year_sel}",
+            )
 
     with c2:
         fig_q0 = _starting_quality_fig(storage_row_med)
@@ -837,8 +885,12 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
             st.info("Starting quality distribution unavailable.")
         else:
             fig_q0.update_layout(height=int(row1_h))
-            st.plotly_chart(fig_q0, use_container_width=True, config={"displayModeBar": False},
-                            key=f"ov_quality_week0_{year_sel}")
+            st.plotly_chart(
+                fig_q0,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_quality_week0_{year_sel}",
+            )
 
     with c3:
         y_med = None
@@ -848,7 +900,6 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
             if not yv.empty:
                 y_med = float(yv.median())
 
-        # ✅ bins-on-trees metric now uses initial bins basis
         bins_on_tree_med = initial_bins_med
 
         top_util_pct = None
@@ -881,31 +932,39 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
         waste_bins_all = float(waste_total_all) if (waste_total_all is not None and np.isfinite(waste_total_all)) else None
         revenue_est = _estimated_revenue(storage_row_med, waste_total_all=waste_total_all)
 
-        r1a, r1b = st.columns(2)
-        r2a, r2b = st.columns(2)
-        r3a, r3b = st.columns(2)
+        metrics_col, hm_col = st.columns([4.2, 1.4], vertical_alignment="top")
 
-        with r1a:
-            st.metric("Median yield (t/ha)", "—" if y_med is None else f"{y_med:.2f}")
-        with r1b:
-            st.metric("Median bins on trees", "—" if bins_on_tree_med is None else f"{bins_on_tree_med:.0f}")
+        with metrics_col:
+            r1a, r1b = st.columns(2)
+            r2a, r2b = st.columns(2)
+            r3a, r3b = st.columns(2)
 
-        with r2a:
-            st.metric("Highest utilisation (%)", "—" if top_util_pct is None else f"{top_util_pct:.0f}%")
-        with r2b:
-            st.metric("Fill rate (%)", "—" if fill_rate_med is None else f"{fill_rate_med:.0f}%")
+            with r1a:
+                st.metric("Median yield (t/ha)", "—" if y_med is None else f"{y_med:.2f}")
+            with r1b:
+                st.metric("Median bins on trees", "—" if bins_on_tree_med is None else f"{bins_on_tree_med:.0f}")
 
-        with r3a:
-            st.metric("Waste bins", "—" if waste_bins_all is None else f"{waste_bins_all:.0f}")
-        with r3b:
-            st.metric("Estimated revenue", "—" if revenue_est is None else f"£{revenue_est:,.0f}")
+            with r2a:
+                st.metric("Highest utilisation (%)", "—" if top_util_pct is None else f"{top_util_pct:.0f}%")
+            with r2b:
+                st.metric("Fill rate (%)", "—" if fill_rate_med is None else f"{fill_rate_med:.0f}%")
 
-        fig_hm = _util_heatmap_selected_year_horizontal(util, year_sel)
-        if fig_hm is None:
-            st.info("Utilisation heatmap unavailable.")
-        else:
-            st.plotly_chart(fig_hm, use_container_width=True, config={"displayModeBar": False},
-                            key=f"ov_util_hm_{year_sel}")
+            with r3a:
+                st.metric("Waste bins", "—" if waste_bins_all is None else f"{waste_bins_all:.0f}")
+            with r3b:
+                st.metric("Estimated revenue", "—" if revenue_est is None else f"£{revenue_est:,.0f}")
+
+        with hm_col:
+            fig_hm = _util_heatmap_selected_year_vertical(util, year_sel)
+            if fig_hm is None:
+                st.info("Utilisation heatmap unavailable.")
+            else:
+                st.plotly_chart(
+                    fig_hm,
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                    key=f"ov_util_hm_{year_sel}",
+                )
 
     st.divider()
     b1, b2, b3 = st.columns(3, vertical_alignment="top")
@@ -916,8 +975,12 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
             st.info("Storage utilisation mix unavailable.")
         else:
             fig_pie.update_layout(height=int(row2_h))
-            st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False},
-                            key=f"ov_storage_pie_{year_sel}")
+            st.plotly_chart(
+                fig_pie,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_storage_pie_{year_sel}",
+            )
 
     with b2:
         fig_bar = _fillrate_grade_bars(storage_row_med, waste_total_all=waste_total_all)
@@ -925,8 +988,12 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
             st.info("Grade fill-rate bars unavailable.")
         else:
             fig_bar.update_layout(height=int(row2_h))
-            st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False},
-                            key=f"ov_fillrate_bars_{year_sel}")
+            st.plotly_chart(
+                fig_bar,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_fillrate_bars_{year_sel}",
+            )
 
     with b3:
         fig_fr = _fillrate_weekly_plot(storage_row_med)
@@ -934,8 +1001,689 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
             st.info("Weekly fill-rate plot unavailable.")
         else:
             fig_fr.update_layout(height=int(row2_h))
-            st.plotly_chart(fig_fr, use_container_width=True, config={"displayModeBar": False},
-                            key=f"ov_fillrate_weekly_{year_sel}")
+            st.plotly_chart(
+                fig_fr,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_fillrate_weekly_{year_sel}",
+            )
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+# Overview tab (UPDATED) — WASTE + MASS-BASIS FIX:
+#   ✅ "Median bins on trees" uses util["initial_bins_on_trees"] (preferred)
+#      instead of trees_series[0] (which can already be reduced by day-0 decay removal).
+#   ✅ Waste metric = median( harvest_waste_removed_total + storage_total_waste_bins )
+#      - computed per-run if shared run-id exists
+#      - else fallback sum-of-medians
+#   ✅ Guardrail: waste_total_all is clamped to median initial bins (prevents impossible displays)
+#   ✅ Layout update:
+#      - removed selected extra metrics
+#      - heatmap placed underneath metrics
+#      - divider moved closer to top row
+#      - bottom row vertically aligned
+#      - heatmap shifted left
+#      - heatmap colourbar stretched further
+#      - weekly fill-rate made taller
+#      - starting inventory legend removed
+# ============================================================
+
+from typing import Any, Dict, List, Optional
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+# assumes these exist in your project
+# - _get_df, _get_nested, _ensure_schema_growth, _hist, _to_1d_float_array, _x_axis
+# - GRADES, ALL_GRADES, Q_THRESHOLDS, GRADE_COLORS
+
+
+def _pick_years_from_any(sim_results: Dict[str, Any]) -> List[int]:
+    for key in ["mc_yearly", "harvest_util_by_year", "storage_by_year"]:
+        df = _get_df(sim_results, key)
+        if not df.empty and "season_year" in df.columns:
+            yrs = sorted(pd.to_numeric(df["season_year"], errors="coerce").dropna().astype(int).unique().tolist())
+            if yrs:
+                return yrs
+    med_storage = _get_nested(sim_results, ["median_detail", "des_out", "storage_by_year"])
+    if isinstance(med_storage, pd.DataFrame) and not med_storage.empty and "season_year" in med_storage.columns:
+        yrs = sorted(pd.to_numeric(med_storage["season_year"], errors="coerce").dropna().astype(int).unique().tolist())
+        return yrs
+    return []
+
+
+def _year_slider(years: List[int]) -> int:
+    if not years:
+        return 0
+    if len(years) == 1:
+        st.slider("Year", years[0], years[0], years[0], 1, key="overview_year_slider")
+        return years[0]
+    return int(st.slider("Year", int(years[0]), int(years[-1]), int(years[-1]), 1, key="overview_year_slider"))
+
+
+def _robust_util_df(sim_results: Dict[str, Any]) -> pd.DataFrame:
+    util = _get_df(sim_results, "harvest_util_by_year")
+    if not util.empty:
+        return util
+    maybe = _get_nested(sim_results, ["median_detail", "des_out", "harvest_yearly"])
+    return maybe.copy() if isinstance(maybe, pd.DataFrame) else pd.DataFrame()
+
+
+def _robust_storage_df_any(sim_results: Dict[str, Any]) -> pd.DataFrame:
+    storage = _get_df(sim_results, "storage_by_year")
+    if not storage.empty:
+        return storage
+    maybe = _get_nested(sim_results, ["median_detail", "des_out", "storage_by_year"])
+    return maybe.copy() if isinstance(maybe, pd.DataFrame) else pd.DataFrame()
+
+
+def _median_detail_storage_row(sim_results: Dict[str, Any], year_sel: int) -> Optional[Dict[str, Any]]:
+    med = sim_results.get("median_detail", {})
+    des_out = med.get("des_out") if isinstance(med, dict) else None
+    storage_med = des_out.get("storage_by_year", None) if isinstance(des_out, dict) else None
+    if not isinstance(storage_med, pd.DataFrame) or storage_med.empty or "season_year" not in storage_med.columns:
+        return None
+    df = storage_med.copy()
+    df["season_year"] = pd.to_numeric(df["season_year"], errors="coerce").astype("Int64")
+    df = df.dropna(subset=["season_year"]).copy()
+    df["season_year"] = df["season_year"].astype(int)
+    sel = df[df["season_year"] == int(year_sel)]
+    if sel.empty:
+        return None
+    return sel.iloc[0].to_dict()
+
+
+def _median_initial_bins(util: pd.DataFrame, year_sel: int) -> Optional[float]:
+    if util.empty or "season_year" not in util.columns:
+        return None
+    u = util.copy()
+    u["season_year"] = pd.to_numeric(u["season_year"], errors="coerce")
+    u = u[u["season_year"] == float(year_sel)]
+    if u.empty:
+        return None
+
+    if "initial_bins_on_trees" in u.columns:
+        v = pd.to_numeric(u["initial_bins_on_trees"], errors="coerce").dropna()
+        if not v.empty:
+            return float(v.median())
+
+    if "trees_series" in u.columns:
+        starts = []
+        for vv in u["trees_series"]:
+            if isinstance(vv, list) and len(vv) > 0:
+                try:
+                    starts.append(float(vv[0]))
+                except Exception:
+                    pass
+        if starts:
+            return float(np.nanmedian(np.asarray(starts, dtype=float)))
+
+    return None
+
+
+def _waste_total_all_sources(util: pd.DataFrame, storage: pd.DataFrame, year_sel: int) -> Optional[float]:
+    u = util.copy() if isinstance(util, pd.DataFrame) else pd.DataFrame()
+    s = storage.copy() if isinstance(storage, pd.DataFrame) else pd.DataFrame()
+
+    if not u.empty and "season_year" in u.columns:
+        u["season_year"] = pd.to_numeric(u["season_year"], errors="coerce")
+        u = u[u["season_year"] == float(year_sel)].copy()
+    else:
+        u = pd.DataFrame()
+
+    if not s.empty and "season_year" in s.columns:
+        s["season_year"] = pd.to_numeric(s["season_year"], errors="coerce")
+        s = s[s["season_year"] == float(year_sel)].copy()
+    else:
+        s = pd.DataFrame()
+
+    harvest_col = None
+    for c in ["waste_bins_removed_total", "waste_bins_removed", "waste_bins_short_term"]:
+        if (not u.empty) and (c in u.columns):
+            harvest_col = c
+            break
+    storage_col = "total_waste_bins" if ((not s.empty) and ("total_waste_bins" in s.columns)) else None
+
+    if harvest_col is None and storage_col is None:
+        return None
+
+    run_id_candidates = ["run_id", "mc_run", "rep", "trial", "sim", "seed", "iteration"]
+    shared_id = None
+    for c in run_id_candidates:
+        if (not u.empty) and (not s.empty) and (c in u.columns) and (c in s.columns):
+            shared_id = c
+            break
+
+    if shared_id is not None:
+        uu = u[[shared_id, harvest_col]].copy() if harvest_col else u[[shared_id]].copy()
+        ss = s[[shared_id, storage_col]].copy() if storage_col else s[[shared_id]].copy()
+        if harvest_col:
+            uu[harvest_col] = pd.to_numeric(uu[harvest_col], errors="coerce").fillna(0.0)
+        if storage_col:
+            ss[storage_col] = pd.to_numeric(ss[storage_col], errors="coerce").fillna(0.0)
+        m = uu.merge(ss, on=shared_id, how="outer").fillna(0.0)
+        hw = m[harvest_col].to_numpy(dtype=float) if harvest_col else 0.0
+        sw = m[storage_col].to_numpy(dtype=float) if storage_col else 0.0
+        tot = np.asarray(hw, dtype=float) + np.asarray(sw, dtype=float)
+        tot = tot[np.isfinite(tot)]
+        return float(np.median(tot)) if tot.size else None
+
+    total = 0.0
+    got = False
+    if harvest_col is not None and not u.empty:
+        hw = pd.to_numeric(u[harvest_col], errors="coerce").dropna()
+        if not hw.empty:
+            total += float(hw.median())
+            got = True
+    if storage_col is not None and not s.empty:
+        sw = pd.to_numeric(s[storage_col], errors="coerce").dropna()
+        if not sw.empty:
+            total += float(sw.median())
+            got = True
+
+    return float(total) if got else None
+
+
+def _overview_colored_gradeband_hist(inv_hist: np.ndarray, title: str) -> go.Figure:
+    h = np.asarray(inv_hist, dtype=float)
+    h[~np.isfinite(h)] = 0.0
+    h = np.maximum(0.0, h)
+
+    q_bins = int(h.size)
+    edges = np.linspace(0.0, 1.0, q_bins + 1)
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    width = float(edges[1] - edges[0]) if q_bins > 0 else 0.02
+
+    thr_p = float(Q_THRESHOLDS["Processor_min"])
+    thr_c2 = float(Q_THRESHOLDS["Class2_min"])
+    thr_c1 = float(Q_THRESHOLDS["Class1_min"])
+    thr_e = float(Q_THRESHOLDS["Extra_min"])
+
+    masks = {
+        "Waste": centers < thr_p,
+        "Processor": (centers >= thr_p) & (centers < thr_c2),
+        "Class2": (centers >= thr_c2) & (centers < thr_c1),
+        "Class1": (centers >= thr_c1) & (centers < thr_e),
+        "Extra": centers >= thr_e,
+    }
+
+    fig = go.Figure()
+    for g in ["Waste", "Processor", "Class2", "Class1", "Extra"]:
+        m = masks[g]
+        if not np.any(m):
+            continue
+        fig.add_trace(go.Bar(
+            x=centers[m],
+            y=h[m],
+            name=g,
+            marker=dict(color=GRADE_COLORS.get(g, "#888888")),
+            width=width,
+            hovertemplate=f"{g}<br>Quality=%{{x:.3f}}<br>Bins=%{{y:.1f}}<extra></extra>",
+            showlegend=False,
+        ))
+
+    thr_lines = [thr_p, thr_c2, thr_c1, thr_e]
+    ymax = float(np.nanmax(h)) if h.size else 1.0
+    ymax = max(1.0, ymax * 1.08)
+
+    for xthr in thr_lines:
+        fig.add_shape(
+            type="line",
+            x0=xthr, x1=xthr,
+            y0=0.0, y1=ymax,
+            line=dict(color="white", width=2, dash="dot"),
+        )
+
+    fig.update_layout(
+        title=dict(text=title, x=0.0, xanchor="left"),
+        barmode="overlay",
+        xaxis_title="Quality (0–1)",
+        yaxis_title="Bins",
+        height=350,
+        margin=dict(l=52, r=12, t=46, b=1),
+        hovermode="x unified",
+        showlegend=False,
+    )
+    fig.update_xaxes(range=[0, 1])
+    fig.update_yaxes(range=[0, ymax])
+    return fig
+
+
+def _yield_dist_fig(mc: pd.DataFrame, year_sel: int, height: int) -> Optional[go.Figure]:
+    if mc.empty or "season_year" not in mc.columns or "yield_t_ha" not in mc.columns:
+        return None
+    dfy = mc[mc["season_year"] == int(year_sel)].copy()
+    yld = pd.to_numeric(dfy["yield_t_ha"], errors="coerce").dropna().to_numpy(dtype=float)
+    if yld.size == 0:
+        return None
+    xh, yh = _hist(yld, bins=45)
+    fig = go.Figure([go.Bar(x=xh, y=yh)])
+    fig.update_layout(
+        title=dict(text="Yield distribution", x=0.0, xanchor="left"),
+        height=int(height),
+        margin=dict(l=52, r=12, t=46, b=1),
+    )
+    fig.update_xaxes(title="Yield (t/ha)", range=[0, max(1e-9, float(np.nanmax(xh)) if xh.size else 1.0)])
+    fig.update_yaxes(title="Frequency", range=[0, max(1.0, float(np.nanmax(yh)) * 1.12 if yh.size else 1.0)])
+    return fig
+
+
+def _util_heatmap_selected_year_horizontal(util: pd.DataFrame, year_sel: int) -> Optional[go.Figure]:
+    if util.empty or "season_year" not in util.columns:
+        return None
+
+    u = util.copy()
+    u["season_year"] = pd.to_numeric(u["season_year"], errors="coerce")
+    u = u[u["season_year"] == float(year_sel)].copy()
+    if u.empty:
+        return None
+
+    stages = [
+        ("util_grade", "Graders"),
+        ("util_shuttle", "Filled shuttle"),
+        ("util_pick", "Harvesters"),
+        ("util_empty", "Empty shuttle"),
+    ]
+
+    xs, vals = [], []
+    for col, label in stages:
+        if col not in u.columns:
+            continue
+        v = pd.to_numeric(u[col], errors="coerce").dropna()
+        med = float(np.clip(v.median(), 0.0, 1.0)) if not v.empty else 0.0
+        xs.append(label)
+        vals.append(med)
+
+    if not xs:
+        return None
+
+    colorscale = [
+        [0.00, "#B0B0B0"],
+        [0.05, "#B0B0B0"],
+        [0.30, "#FFD966"],
+        [0.60, "#B7F0A0"],
+        [0.90, "#00B050"],
+        [1.00, "#D00000"],
+    ]
+
+    Z = np.asarray([vals], dtype=float)
+    fig = go.Figure(data=go.Heatmap(
+        z=Z,
+        x=xs,
+        y=[""],
+        zmin=0.0,
+        zmax=1.0,
+        colorscale=colorscale,
+        hoverongaps=False,
+        colorbar=dict(
+            title=dict(text="Util", side="top", font=dict(size=12)),
+            thickness=20,
+            len=1.38,
+            lenmode="fraction",
+            y=0.50,
+            yanchor="middle",
+            x=1.03,
+            tickfont=dict(size=11),
+        ),
+    ))
+
+    fig.update_layout(
+        title=dict(text="Harvest utilisation (median)", x=0.0, xanchor="left"),
+        height=160,
+        margin=dict(l=8, r=52, t=34, b=1),
+    )
+    fig.update_xaxes(
+        title="",
+        tickangle=0,
+        automargin=True,
+        tickfont=dict(size=10),
+    )
+    fig.update_yaxes(
+        title="",
+        showticklabels=False,
+        ticks="",
+    )
+    return fig
+
+
+def _starting_quality_fig(storage_row_med: Optional[Dict[str, Any]]) -> Optional[go.Figure]:
+    if not isinstance(storage_row_med, dict):
+        return None
+    inv_hist_week = storage_row_med.get("inventory_quality_hist_by_week", None)
+    if inv_hist_week is None:
+        return None
+    inv = np.asarray(inv_hist_week, dtype=float)
+    if inv.ndim != 2 or inv.shape[0] <= 0:
+        return None
+    return _overview_colored_gradeband_hist(inv[0, :], "Harvest inventory quality")
+
+
+def _estimated_revenue(storage_row_med: Optional[Dict[str, Any]], waste_total_all: Optional[float]) -> Optional[float]:
+    if not isinstance(storage_row_med, dict):
+        return None
+    ful = storage_row_med.get("fulfilled_by_week", None)
+    if not isinstance(ful, dict):
+        return None
+
+    price = {"Extra": 100.0, "Class1": 75.0, "Class2": 60.0, "Processor": 40.0, "Waste": -5.0}
+
+    delivered = {}
+    for g in GRADES:
+        a = _to_1d_float_array(ful.get(g, []))
+        delivered[g] = float(np.nansum(np.maximum(0.0, a))) if a is not None else 0.0
+
+    waste_bins_all = float(waste_total_all) if (waste_total_all is not None and np.isfinite(waste_total_all)) else float(
+        storage_row_med.get("total_waste_bins", 0.0) or 0.0
+    )
+
+    rev = 0.0
+    for g in GRADES:
+        rev += delivered.get(g, 0.0) * price[g]
+    rev += waste_bins_all * price["Waste"]
+    return float(rev)
+
+
+def _storage_grade_mix_pie(storage_row_med: Optional[Dict[str, Any]], config: Dict[str, Any]) -> Optional[go.Figure]:
+    if not isinstance(storage_row_med, dict):
+        return None
+    inv_by_week = storage_row_med.get("inventory_by_week", None)
+    if not isinstance(inv_by_week, dict):
+        return None
+
+    vals = {}
+    for g in ALL_GRADES:
+        a = _to_1d_float_array(inv_by_week.get(g, []))
+        vals[g] = float(np.nanmean(np.maximum(0.0, a))) if (a is not None and a.size) else 0.0
+
+    storage_factor = float(config.get("what_if_storage_factor", 1.0))
+    long_term_capacity = float(config.get("long_term_capacity", 2000))
+    effective_capacity = max(0.0, long_term_capacity * storage_factor)
+
+    used = float(sum(vals.get(g, 0.0) for g in ALL_GRADES))
+    vals["Empty / unused"] = float(max(0.0, effective_capacity - used))
+
+    labels = ["Extra", "Class1", "Class2", "Processor", "Waste", "Empty / unused"]
+    pie_vals = [vals.get(k, 0.0) for k in labels]
+    pie_colors = [
+        GRADE_COLORS["Extra"],
+        GRADE_COLORS["Class1"],
+        GRADE_COLORS["Class2"],
+        GRADE_COLORS["Processor"],
+        GRADE_COLORS["Waste"],
+        "#9E9E9E",
+    ]
+
+    fig = go.Figure(data=[go.Pie(labels=labels, values=pie_vals, hole=0.55, marker=dict(colors=pie_colors))])
+    fig.update_layout(
+        title=dict(text="Storage usage", x=0.0, xanchor="left"),
+        height=245,
+        margin=dict(l=20, r=175, t=42, b=32),
+        legend=dict(orientation="v", x=0.9, xanchor="left", y=1.0, yanchor="top"),
+    )
+    return fig
+
+
+def _fillrate_grade_bars(storage_row_med: Optional[Dict[str, Any]], waste_total_all: Optional[float]) -> Optional[go.Figure]:
+    if not isinstance(storage_row_med, dict):
+        return None
+    dem = storage_row_med.get("demand_by_week", None)
+    ful = storage_row_med.get("fulfilled_by_week", None)
+    if not isinstance(dem, dict) or not isinstance(ful, dict):
+        return None
+
+    fr = {}
+    for g in GRADES:
+        d = _to_1d_float_array(dem.get(g, []))
+        f = _to_1d_float_array(ful.get(g, []))
+        if d is None or f is None or d.size == 0 or f.size == 0:
+            fr[g] = 1.0
+            continue
+        dt = float(np.nansum(np.maximum(0.0, d)))
+        ft = float(np.nansum(np.maximum(0.0, f)))
+        fr[g] = float(ft / dt) if dt > 1e-9 else 1.0
+
+    waste_all = float(waste_total_all) if (waste_total_all is not None and np.isfinite(waste_total_all)) else float(
+        storage_row_med.get("total_waste_bins", 0.0) or 0.0
+    )
+
+    fulfilled_total = float(storage_row_med.get("total_fulfilled_bins", 0.0) or 0.0)
+    ending_inv = float(storage_row_med.get("ending_inventory_bins", 0.0) or 0.0)
+    denom = max(1e-9, fulfilled_total + ending_inv + waste_all)
+    waste_pct = float(waste_all / denom)
+
+    labels = ["Extra", "Class1", "Class2", "Processor", "Waste"]
+    values = [
+        fr.get("Extra", 1.0) * 100.0,
+        fr.get("Class1", 1.0) * 100.0,
+        fr.get("Class2", 1.0) * 100.0,
+        fr.get("Processor", 1.0) * 100.0,
+        waste_pct * 100.0,
+    ]
+    colors = [
+        GRADE_COLORS["Extra"],
+        GRADE_COLORS["Class1"],
+        GRADE_COLORS["Class2"],
+        GRADE_COLORS["Processor"],
+        GRADE_COLORS["Waste"],
+    ]
+
+    fig = go.Figure([go.Bar(x=labels, y=values, marker=dict(color=colors))])
+    fig.update_layout(
+        title=dict(text="Fill rate by grade + waste", x=0.0, xanchor="left"),
+        yaxis_title="Fill rate(%)",
+        height=245,
+        margin=dict(l=52, r=12, t=42, b=32),
+    )
+    fig.update_yaxes(range=[0, 100])
+    return fig
+
+
+def _fillrate_weekly_plot(storage_row_med: Optional[Dict[str, Any]]) -> Optional[go.Figure]:
+    if not isinstance(storage_row_med, dict):
+        return None
+    fr = storage_row_med.get("fill_rate_by_week", None)
+    if not isinstance(fr, dict):
+        return None
+
+    T = None
+    for g in GRADES:
+        a = _to_1d_float_array(fr.get(g, []))
+        if a is not None and a.size > 0:
+            T = int(a.size)
+            break
+    if T is None:
+        return None
+
+    x = _x_axis(T)
+    fig = go.Figure()
+    for g in GRADES:
+        a = _to_1d_float_array(fr.get(g, []))
+        if a is None or a.size == 0:
+            continue
+        fig.add_trace(go.Scatter(
+            x=x, y=np.asarray(a, dtype=float) * 100.0,
+            mode="lines", name=g,
+            line=dict(color=GRADE_COLORS.get(g, None), width=3),
+            line_shape="hv",
+        ))
+    fig.update_layout(
+        title=dict(text="Weekly fill rate", x=0.0, xanchor="left"),
+        xaxis_title="Week",
+        yaxis_title="Fill rate (%)",
+        height=500,
+        hovermode="x unified",
+        margin=dict(l=52, r=90, t=42, b=32),
+        legend=dict(x=1.01, xanchor="left", y=1.0, yanchor="top"),
+    )
+    fig.update_yaxes(range=[0, 100])
+    return fig
+
+
+def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> None:
+    st.subheader("Dashboard Overview")
+
+    years = _pick_years_from_any(sim_results)
+    if not years:
+        st.info("Overview unavailable (no years found).")
+        return
+    year_sel = _year_slider(years)
+
+    mc = _ensure_schema_growth(_get_df(sim_results, "mc_yearly"))
+    util = _robust_util_df(sim_results)
+    storage = _robust_storage_df_any(sim_results)
+    storage_row_med = _median_detail_storage_row(sim_results, year_sel)
+
+    initial_bins_med = _median_initial_bins(util, int(year_sel))
+    waste_total_all = _waste_total_all_sources(util=util, storage=storage, year_sel=int(year_sel))
+
+    if (waste_total_all is not None and np.isfinite(waste_total_all)
+            and initial_bins_med is not None and np.isfinite(initial_bins_med)):
+        waste_total_all = float(min(waste_total_all, initial_bins_med))
+
+    row1_h = 350
+    pie_h = 245
+    bar_h = 245
+    weekly_h = 275
+
+    c1, c2, c3 = st.columns([1.05, 1.05, 1.10], vertical_alignment="top")
+
+    with c1:
+        fig_y = _yield_dist_fig(mc, year_sel, height=row1_h)
+        if fig_y is None:
+            st.info("Yield distribution unavailable.")
+        else:
+            st.plotly_chart(
+                fig_y,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_yield_dist_{year_sel}",
+            )
+
+    with c2:
+        fig_q0 = _starting_quality_fig(storage_row_med)
+        if fig_q0 is None:
+            st.info("Starting quality distribution unavailable.")
+        else:
+            fig_q0.update_layout(height=int(row1_h))
+            st.plotly_chart(
+                fig_q0,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_quality_week0_{year_sel}",
+            )
+
+    with c3:
+        y_med = None
+        if not mc.empty and "season_year" in mc.columns and "yield_t_ha" in mc.columns:
+            dfy = mc[mc["season_year"] == int(year_sel)].copy()
+            yv = pd.to_numeric(dfy["yield_t_ha"], errors="coerce").dropna()
+            if not yv.empty:
+                y_med = float(yv.median())
+
+        fill_rate_med = None
+        if not storage.empty and "season_year" in storage.columns and "fill_rate_overall" in storage.columns:
+            s = storage.copy()
+            s["season_year"] = pd.to_numeric(s["season_year"], errors="coerce")
+            s = s[s["season_year"] == float(year_sel)]
+            fr = pd.to_numeric(s["fill_rate_overall"], errors="coerce").dropna()
+            if not fr.empty:
+                fill_rate_med = float(np.clip(fr.median(), 0.0, 1.0) * 100.0)
+
+        waste_bins_all = float(waste_total_all) if (waste_total_all is not None and np.isfinite(waste_total_all)) else None
+        revenue_est = _estimated_revenue(storage_row_med, waste_total_all=waste_total_all)
+
+        r1a, r1b = st.columns(2)
+        r2a, r2b = st.columns(2)
+
+        with r1a:
+            st.metric("Median yield (t/ha)", "—" if y_med is None else f"{y_med:.2f}")
+        with r1b:
+            st.metric("Fill rate (%)", "—" if fill_rate_med is None else f"{fill_rate_med:.0f}%")
+
+        with r2a:
+            st.metric("Waste bins", "—" if waste_bins_all is None else f"{waste_bins_all:.0f}")
+        with r2b:
+            st.metric("Estimated revenue", "—" if revenue_est is None else f"£{revenue_est:,.0f}")
+
+        fig_hm = _util_heatmap_selected_year_horizontal(util, year_sel)
+        if fig_hm is None:
+            st.info("Utilisation heatmap unavailable.")
+        else:
+            st.plotly_chart(
+                fig_hm,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_util_hm_{year_sel}",
+            )
+
+    st.markdown("<div style='margin-top:-700px;'></div>", unsafe_allow_html=True)
+    st.divider()
+
+    b1, b2, b3 = st.columns(3, vertical_alignment="top")
+
+    with b1:
+        fig_pie = _storage_grade_mix_pie(storage_row_med, config)
+        if fig_pie is None:
+            st.info("Storage utilisation mix unavailable.")
+        else:
+            fig_pie.update_layout(height=int(pie_h))
+            st.plotly_chart(
+                fig_pie,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_storage_pie_{year_sel}",
+            )
+
+    with b2:
+        fig_bar = _fillrate_grade_bars(storage_row_med, waste_total_all=waste_total_all)
+        if fig_bar is None:
+            st.info("Grade fill-rate bars unavailable.")
+        else:
+            fig_bar.update_layout(height=int(bar_h))
+            st.plotly_chart(
+                fig_bar,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_fillrate_bars_{year_sel}",
+            )
+
+    with b3:
+        fig_fr = _fillrate_weekly_plot(storage_row_med)
+        if fig_fr is None:
+            st.info("Weekly fill-rate plot unavailable.")
+        else:
+            fig_fr.update_layout(height=int(weekly_h))
+            st.plotly_chart(
+                fig_fr,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"ov_fillrate_weekly_{year_sel}",
+            )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

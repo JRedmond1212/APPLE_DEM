@@ -61,7 +61,7 @@ MICRO_FIXED_CONFIG: Dict[str, Any] = {
     "policy_storage": "FEFO",
 
     # ✅ changed default from None to Case_Study
-    "micro_template_name": "Case_Study",
+    "micro_template_name": "Armagh",
 }
 
 MONTH_THA = {
@@ -219,7 +219,7 @@ def normalize_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     out.setdefault("lon", -6.5292)
 
     # ✅ changed default from None to Case_Study
-    out.setdefault("micro_template_name", "Case_Study")
+    out.setdefault("micro_template_name", "Armagh")
 
     out.setdefault("long_term_capacity_base", int(out.get("long_term_capacity", 2000)))
 
@@ -249,7 +249,7 @@ def build_sidebar_config(sim_mode: str, mc_runs: int) -> Dict[str, Any]:
             template_name = None
         else:
             # ✅ default to Case_Study if present, otherwise first template
-            default_template = str(cfg.get("micro_template_name", "Case_Study") or "Case_Study")
+            default_template = str(cfg.get("micro_template_name", "Armagh") or "Armagh")
             if default_template in names:
                 default_index = names.index(default_template)
             else:
@@ -585,15 +585,15 @@ def export_weather_template(weather_cache: Dict[str, Any]) -> Tuple[bytes, bytes
     return weather_cache_to_template_bytes(weather_cache)
 
 
-def save_weather_template_to_project_folder(weather_cache: Dict[str, Any], template_name: str) -> Tuple[str, str, str]:
-    daily_csv_bytes, arrays_npz_bytes, meta_json_bytes = export_weather_template(weather_cache)
-    return save_template_to_folder(
-        folder=TEMPLATE_FOLDER,
-        template_name=template_name,
-        daily_csv_bytes=daily_csv_bytes,
-        arrays_npz_bytes=arrays_npz_bytes,
-        meta_json_bytes=meta_json_bytes,
-    )
+#def save_weather_template_to_project_folder(weather_cache: Dict[str, Any], template_name: str) -> Tuple[str, str, str]:
+ #   daily_csv_bytes, arrays_npz_bytes, meta_json_bytes = export_weather_template(weather_cache)
+  #  return save_template_to_folder(
+   #     folder=TEMPLATE_FOLDER,
+    #    template_name=template_name,
+     #   daily_csv_bytes=daily_csv_bytes,
+      #  arrays_npz_bytes=arrays_npz_bytes,
+       # meta_json_bytes=meta_json_bytes,
+    #)
 
 
 def _build_weather_cache(config: Dict[str, Any]) -> Dict[str, Any]:
