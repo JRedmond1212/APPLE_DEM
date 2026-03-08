@@ -1,0 +1,33 @@
+APPLE_DEM Code Hierarchy
+========================
+APP.py
+
+Pre-processing
+--------------
+Pre_processing.py
+
+Discrete Event Simulation (DES)
+-------------------------------
+DES/DES_runner.py
+  
+DES/Growth_module.py
+ 
+DES/Harvest_Grading_module.py
+ 
+DES/Storage_Distribution_module.py
+
+Agent-Based / Policy layer
+--------------------------
+ABS/Policy_module.py
+ 
+Monte Carlo Simulation (MCS)
+----------------------------
+MCS/MonteCarlo_module.py
+ 
+Digital Twin (DTS)
+------------------
+DTS/DigitalTwin_module.py
+ 
+Post-processing
+---------------
+Post_processing/Post_processing.py

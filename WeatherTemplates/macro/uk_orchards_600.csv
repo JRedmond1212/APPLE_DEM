@@ -1,0 +1,193 @@
+county,region,source_county,lat,lon,ha_2025,tree_density,tree_age_2025,variety,rootstock
+Kent_001,Kent,Kent,51.287762,0.809567,3.66,1200,16,Jazz,M9
+Kent_002,Kent,Kent,51.33948,0.920697,5.92,1200,17,Pink Lady,MM106
+Kent_003,Kent,Kent,51.285478,0.868993,13.41,1600,4,Gala,M26
+Kent_004,Kent,Kent,51.306049,0.813469,1.47,1600,8,Gala,M26
+Kent_005,Kent,Kent,51.190411,0.444284,7.93,1600,22,Pink Lady,M26
+Kent_006,Kent,Kent,51.277299,0.833508,6.67,1200,4,Jazz,M9
+Kent_007,Kent,Kent,51.154263,0.507932,0.9,1200,25,Cox's Orange Pippin,M26
+Kent_008,Kent,Kent,51.15639,0.493328,7.29,2200,24,Gala,MM106
+Kent_009,Kent,Kent,51.121992,0.66316,11.65,1600,17,Braeburn,MM106
+Kent_010,Kent,Kent,51.284957,0.964091,0.89,2200,7,Cox's Orange Pippin,M9
+Kent_011,Kent,Kent,51.286659,0.889779,10.32,450,4,Jazz,MM106
+Kent_012,Kent,Kent,51.246451,1.039479,4.01,600,7,Gala,M9
+Kent_013,Kent,Kent,51.318462,0.896855,3.58,1200,20,Braeburn,M26
+Kent_014,Kent,Kent,51.274773,0.826668,4.66,450,23,Braeburn,M9
+Kent_015,Kent,Kent,51.300787,0.831714,1.2,2200,15,Jazz,MM106
+Kent_016,Kent,Kent,51.287389,0.804033,1.97,2200,25,Cox's Orange Pippin,M26
+Kent_017,Kent,Kent,51.314553,0.92551,2.39,800,21,Braeburn,M26
+Kent_018,Kent,Kent,51.273216,0.43227,4.82,1600,18,Braeburn,M26
+Kent_019,Kent,Kent,51.199837,1.097491,2.13,450,13,Gala,M9
+Kent_020,Kent,Kent,51.272342,0.842152,0.8,1200,16,Cox's Orange Pippin,M26
+Kent_021,Kent,Kent,51.306696,0.447414,4.55,800,16,Gala,MM106
+Kent_022,Kent,Kent,51.179041,0.470646,4.37,800,23,Gala,M25
+Kent_023,Kent,Kent,51.319909,0.448455,6.85,1200,6,Gala,M9
+Kent_024,Kent,Kent,51.104506,0.514657,3.28,1200,5,Gala,M26
+Kent_025,Kent,Kent,51.264531,0.9317,4.68,1200,18,Jazz,M25
+Kent_026,Kent,Kent,51.164508,0.500713,3.95,450,7,Jazz,M26
+Kent_027,Kent,Kent,51.150269,0.512311,8.14,800,17,Cox's Orange Pippin,MM106
+Kent_028,Kent,Kent,51.279788,0.86993,2.11,450,16,Gala,M25
+Kent_029,Kent,Kent,51.092536,0.604746,10.86,600,25,Gala,MM106
+Kent_030,Kent,Kent,51.219405,1.082832,1.52,800,7,Jazz,MM106
+Kent_031,Kent,Kent,51.215959,1.061808,4.84,800,5,Cox's Orange Pippin,M26
+Kent_032,Kent,Kent,51.331843,0.878322,8.38,800,28,Gala,MM106
+Kent_033,Kent,Kent,51.230102,1.064135,1.54,1200,12,Pink Lady,M26
+Kent_034,Kent,Kent,51.160112,0.481326,1.9,450,5,Jazz,M25
+Kent_035,Kent,Kent,51.306774,0.812122,10.87,450,22,Jazz,MM106
+Kent_036,Kent,Kent,51.146424,0.532119,2.72,1600,9,Gala,M9
+Kent_037,Kent,Kent,51.032031,0.569205,6.57,600,13,Jazz,M26
+Kent_038,Kent,Kent,51.312047,0.787022,2.92,600,12,Gala,M9
+Kent_039,Kent,Kent,51.165191,0.499046,15.26,1200,30,Gala,M26
+Kent_040,Kent,Kent,51.308496,0.889705,9.56,2200,6,Gala,M25
+Kent_041,Kent,Kent,51.332856,0.822558,4.58,800,7,Jazz,M25
+Kent_042,Kent,Kent,51.279954,0.945361,11.77,800,10,Gala,M25
+Kent_043,Kent,Kent,51.157606,0.706666,7.32,600,26,Braeburn,M9
+Kent_044,Kent,Kent,51.287664,0.926927,13.32,2200,9,Gala,M25
+Kent_045,Kent,Kent,51.302491,0.869861,8.47,1200,22,Braeburn,MM106
+Kent_046,Kent,Kent,51.140274,0.617206,11.51,2200,18,Jazz,M25
+Kent_047,Kent,Kent,51.273442,0.908944,6.17,600,4,Braeburn,MM106
+Kent_048,Kent,Kent,51.158616,0.624367,0.73,1600,21,Pink Lady,M26
+Kent_049,Kent,Kent,51.280419,0.877118,2.39,600,5,Pink Lady,M26
+Kent_050,Kent,Kent,51.071081,0.586684,8.71,2200,29,Braeburn,M25
+Kent_051,Kent,Kent,51.146824,0.67575,9.59,1200,15,Braeburn,M9
+Kent_052,Kent,Kent,51.161888,0.483824,2.8,1600,3,Gala,MM106
+Kent_053,Kent,Kent,51.235198,1.089546,3.71,1200,7,Pink Lady,MM106
+Kent_054,Kent,Kent,51.23501,1.078661,8.95,600,21,Pink Lady,M9
+Kent_055,Kent,Kent,51.146789,0.659659,3.03,800,18,Jazz,M26
+Kent_056,Kent,Kent,51.307327,0.861426,3.45,1600,18,Gala,M26
+Kent_057,Kent,Kent,51.304371,0.841326,8.14,2200,14,Pink Lady,M9
+Kent_058,Kent,Kent,51.104261,0.652979,6.35,600,20,Braeburn,MM106
+Kent_059,Kent,Kent,51.274976,0.411739,4.57,1200,25,Pink Lady,M26
+Kent_060,Kent,Kent,51.309268,0.45032,0.57,800,21,Gala,M26
+Kent_061,Kent,Kent,51.113971,0.635105,3.79,600,11,Gala,M9
+Kent_062,Kent,Kent,51.29221,0.775526,3.11,600,4,Braeburn,MM106
+Kent_063,Kent,Kent,51.101967,0.562812,6.48,1600,6,Gala,M26
+Kent_064,Kent,Kent,51.14039,0.680874,6.03,800,23,Jazz,M25
+Kent_065,Kent,Kent,51.097808,0.628791,4.39,600,3,Pink Lady,MM106
+Kent_066,Kent,Kent,51.076897,0.59221,14.06,1600,25,Braeburn,M9
+Kent_067,Kent,Kent,51.05883,0.524555,3.64,600,10,Braeburn,M9
+Kent_068,Kent,Kent,51.211479,1.057176,6.38,1600,27,Cox's Orange Pippin,M9
+Kent_069,Kent,Kent,51.145195,0.643486,16.12,450,24,Gala,M9
+Kent_070,Kent,Kent,51.146929,0.601687,18.13,1600,15,Jazz,MM106
+Kent_071,Kent,Kent,51.081455,0.535711,3.23,800,11,Gala,M25
+Kent_072,Kent,Kent,51.262447,0.416554,1.84,1200,13,Pink Lady,M26
+Kent_073,Kent,Kent,51.316618,0.464705,3.78,800,27,Pink Lady,MM106
+Kent_074,Kent,Kent,51.301709,0.802406,2.97,450,13,Jazz,M26
+Kent_075,Kent,Kent,51.288202,0.933558,4.81,600,8,Gala,MM106
+Kent_076,Kent,Kent,51.33901,0.895142,8.17,1200,9,Gala,M26
+Kent_077,Kent,Kent,51.281741,0.898658,2.15,600,21,Gala,M25
+Kent_078,Kent,Kent,51.079246,0.636526,9.59,600,24,Pink Lady,M26
+Kent_079,Kent,Kent,51.28111,0.398272,2.53,600,4,Gala,M26
+Kent_080,Kent,Kent,51.312625,0.92463,3.72,450,7,Cox's Orange Pippin,M26
+Kent_081,Kent,Kent,51.161644,0.480465,7.03,1600,5,Gala,M9
+Kent_082,Kent,Kent,51.151319,0.687797,1.3,1200,24,Cox's Orange Pippin,M9
+Kent_083,Kent,Kent,51.094419,0.613052,4.04,600,9,Jazz,M26
+Kent_084,Kent,Kent,51.305252,0.85616,10.17,1600,5,Gala,M25
+Kent_085,Kent,Kent,51.218968,0.849024,0.54,800,4,Cox's Orange Pippin,M26
+Kent_086,Kent,Kent,51.250126,0.837992,1.58,600,15,Braeburn,M26
+Kent_087,Kent,Kent,51.126799,0.634576,0.79,800,3,Jazz,MM106
+Kent_088,Kent,Kent,51.31117,0.87044,3.75,600,16,Gala,MM106
+Kent_089,Kent,Kent,51.21037,1.081553,4.65,800,19,Pink Lady,M26
+Kent_090,Kent,Kent,51.294939,0.892436,4.11,2200,26,Cox's Orange Pippin,MM106
+Kent_091,Kent,Kent,51.143406,0.653175,5.37,600,6,Jazz,M9
+Kent_092,Kent,Kent,51.154622,0.55334,4.0,450,15,Braeburn,M26
+Kent_093,Kent,Kent,51.135446,0.650591,1.99,2200,25,Gala,M9
+Kent_094,Kent,Kent,51.067839,0.576228,7.96,450,5,Gala,M9
+Kent_095,Kent,Kent,51.298213,0.825488,0.94,600,3,Gala,M9
+Kent_096,Kent,Kent,51.3238,0.948102,2.27,2200,13,Jazz,MM106
+Kent_097,Kent,Kent,51.296616,0.834858,4.71,2200,9,Cox's Orange Pippin,M25
+Kent_098,Kent,Kent,51.074558,0.602963,2.83,1600,6,Braeburn,MM106
+Kent_099,Kent,Kent,51.305216,0.825619,0.67,1600,23,Jazz,M26
+Kent_100,Kent,Kent,51.308104,0.884794,6.93,1600,25,Pink Lady,M25
+Kent_101,Kent,Kent,51.127808,0.601957,1.87,600,6,Gala,MM106
+Kent_102,Kent,Kent,51.14485,0.453574,10.37,1600,16,Cox's Orange Pippin,M9
+Kent_103,Kent,Kent,51.16312,0.653347,14.72,1600,5,Cox's Orange Pippin,M9
+Kent_104,Kent,Kent,51.289755,0.417569,8.19,800,16,Jazz,M25
+Kent_105,Kent,Kent,51.24775,0.960817,1.76,1200,28,Jazz,M25
+Kent_106,Kent,Kent,51.21349,1.061965,2.96,450,18,Jazz,M25
+Kent_107,Kent,Kent,51.315346,0.944315,0.72,1200,18,Cox's Orange Pippin,M25
+Kent_108,Kent,Kent,51.306124,0.869722,3.37,600,7,Braeburn,MM106
+Kent_109,Kent,Kent,51.313978,0.924902,8.71,2200,12,Braeburn,M26
+Kent_110,Kent,Kent,51.263798,0.833701,4.74,1200,5,Pink Lady,M9
+Kent_111,Kent,Kent,51.307773,0.949014,2.9,2200,21,Gala,M26
+Kent_112,Kent,Kent,51.162442,0.489863,2.19,800,16,Gala,M9
+Kent_113,Kent,Kent,51.178068,0.465183,8.39,800,14,Gala,MM106
+Kent_114,Kent,Kent,51.299854,0.442222,2.43,450,6,Braeburn,M9
+Kent_115,Kent,Kent,51.301741,0.92934,4.85,2200,23,Cox's Orange Pippin,M25
+Kent_116,Kent,Kent,51.082442,0.54681,4.25,1200,23,Jazz,MM106
+Kent_117,Kent,Kent,51.136894,0.582187,9.97,800,11,Braeburn,MM106
+Kent_118,Kent,Kent,51.204595,0.603143,2.0,1200,7,Jazz,M25
+Kent_119,Kent,Kent,51.136672,0.664171,3.95,800,15,Gala,MM106
+Kent_120,Kent,Kent,51.114808,0.609021,10.64,450,15,Braeburn,M25
+Kent_121,Kent,Kent,51.195815,0.435696,4.73,1600,10,Pink Lady,M25
+Kent_122,Kent,Kent,51.308544,0.965047,8.99,1200,4,Jazz,M26
+Kent_123,Kent,Kent,51.321427,0.829116,6.13,1200,24,Pink Lady,MM106
+Kent_124,Kent,Kent,51.266994,0.963258,2.63,1200,23,Gala,M9
+Kent_125,Kent,Kent,51.07816,0.561533,1.33,450,30,Jazz,M9
+Kent_126,Kent,Kent,51.086891,0.578362,4.28,1600,4,Cox's Orange Pippin,M25
+Kent_127,Kent,Kent,51.130139,0.472019,1.7,450,25,Pink Lady,M26
+Kent_128,Kent,Kent,51.306485,0.902094,4.71,800,8,Gala,M25
+Kent_129,Kent,Kent,51.080131,0.571409,9.17,2200,3,Gala,M25
+Kent_130,Kent,Kent,51.28374,0.400022,10.04,450,6,Cox's Orange Pippin,MM106
+Kent_131,Kent,Kent,51.303007,0.910578,6.7,800,4,Jazz,M26
+Kent_132,Kent,Kent,51.326511,0.951655,1.94,1600,8,Gala,M25
+Herefordshire_001,Herefordshire,Herefordshire,52.119969,-2.829939,8.06,800,28,Bramley Seedling,M9
+Herefordshire_002,Herefordshire,Herefordshire,52.043446,-2.383462,7.38,1200,22,Cox's Orange Pippin,M26
+Herefordshire_003,Herefordshire,Herefordshire,51.981822,-2.52734,1.82,600,28,Bramley Seedling,M9
+Herefordshire_004,Herefordshire,Herefordshire,51.889389,-2.588073,2.25,1600,3,Braeburn,MM106
+Herefordshire_005,Herefordshire,Herefordshire,52.239361,-2.675255,3.16,1200,13,Braeburn,MM106
+Herefordshire_006,Herefordshire,Herefordshire,51.90699,-2.590269,3.43,600,19,Bramley Seedling,M25
+Herefordshire_007,Herefordshire,Herefordshire,52.251753,-2.80035,1.23,600,7,Bramley Seedling,MM106
+Herefordshire_008,Herefordshire,Herefordshire,52.136582,-2.805483,0.59,1600,7,Bramley Seedling,M26
+Herefordshire_009,Herefordshire,Herefordshire,52.155071,-2.797036,11.54,1600,25,Braeburn,M25
+Herefordshire_010,Herefordshire,Herefordshire,52.139446,-2.786772,5.84,1600,14,Gala,M9
+Suffolk_001,Suffolk,Suffolk,52.197415,0.728611,1.21,1600,14,Discovery,M25
+Suffolk_002,Suffolk,Suffolk,52.189814,1.012094,2.47,1600,5,Gala,M26
+Suffolk_003,Suffolk,Suffolk,52.150866,1.02009,13.88,800,11,Cox's Orange Pippin,M26
+Suffolk_004,Suffolk,Suffolk,52.012469,0.97463,2.46,450,17,Braeburn,M26
+Cambridgeshire_001,Cambridgeshire,Cambridgeshire,52.448433,0.073879,2.74,800,18,Jazz,M25
+Cambridgeshire_002,Cambridgeshire,Cambridgeshire,52.651066,0.148108,2.76,1200,5,Discovery,M26
+Cambridgeshire_003,Cambridgeshire,Cambridgeshire,52.436744,0.030178,0.88,2200,24,Jazz,M9
+Cambridgeshire_004,Cambridgeshire,Cambridgeshire,52.414148,0.045212,8.96,1600,26,Discovery,M9
+Gloucestershire_001,Gloucestershire,Gloucestershire,51.969295,-2.399118,7.52,800,27,Bramley Seedling,M26
+Gloucestershire_002,Gloucestershire,Gloucestershire,51.940292,-2.369884,2.43,1600,8,Egremont Russet,M9
+Worcestershire_001,Worcestershire,Worcestershire,52.107978,-2.084419,1.53,600,6,Cox's Orange Pippin,M26
+Worcestershire_002,Worcestershire,Worcestershire,52.105049,-2.126038,2.16,1200,27,Bramley Seedling,M9
+Norfolk_001,Norfolk,Norfolk,52.554337,1.065197,3.83,1200,13,Braeburn,MM106
+Norfolk_002,Norfolk,Norfolk,52.584414,1.127781,5.46,1200,6,Braeburn,MM106
+Norfolk_003,Norfolk,Norfolk,52.545693,1.121987,5.9,1200,17,Braeburn,MM106
+Sussex_001,Sussex,Sussex,51.017871,0.414069,4.16,800,7,Gala,MM106
+Sussex_002,Sussex,Sussex,50.966262,0.098805,7.08,1200,26,Cox's Orange Pippin,MM106
+Devon_001,Devon,Devon,50.777069,-3.687039,5.45,800,24,Discovery,M25
+Devon_002,Devon,Devon,50.794364,-3.637236,3.45,800,16,Egremont Russet,M9
+Hampshire_001,Hampshire,Hampshire,50.979856,-0.980401,6.99,600,3,Cox's Orange Pippin,M26
+Hampshire_002,Hampshire,Hampshire,51.132738,-1.139709,1.97,1200,4,Cox's Orange Pippin,MM106
+Dorset_001,Dorset,Dorset,50.84133,-2.163807,12.46,600,5,Egremont Russet,M25
+Dorset_002,Dorset,Dorset,50.834826,-2.148741,1.92,2200,14,Egremont Russet,M9
+Essex_001,Essex,Essex,51.803128,0.73748,1.7,600,8,Braeburn,M26
+Essex_002,Essex,Essex,51.801114,0.73272,10.88,600,19,Gala,M9
+NorthernIreland_001,Northern Ireland,Northern Ireland,54.352459,-6.576307,5.88,1600,13,Bramley Seedling,M9
+NorthernIreland_002,Northern Ireland,Northern Ireland,54.457133,-6.616336,3.23,1200,6,Bramley Seedling,M9
+NorthernIreland_003,Northern Ireland,Northern Ireland,54.462848,-6.595076,3.91,600,17,Gala,MM106
+NorthernIreland_004,Northern Ireland,Northern Ireland,54.397514,-6.609551,4.43,600,9,Bramley Seedling,M26
+NorthernIreland_005,Northern Ireland,Northern Ireland,54.380061,-6.578588,5.66,2200,15,Gala,M9
+NorthernIreland_006,Northern Ireland,Northern Ireland,54.404196,-6.589337,8.59,1600,23,Bramley Seedling,MM106
+NorthernIreland_007,Northern Ireland,Northern Ireland,54.393896,-6.608086,5.88,1600,13,Bramley Seedling,M9
+NorthernIreland_008,Northern Ireland,Northern Ireland,54.372913,-6.584645,3.89,1600,9,Bramley Seedling,M9
+NorthernIreland_009,Northern Ireland,Northern Ireland,54.390222,-6.539147,3.02,600,9,Bramley Seedling,MM106
+NorthernIreland_010,Northern Ireland,Northern Ireland,54.39097,-6.526315,4.43,600,9,Bramley Seedling,M26
+NorthernIreland_011,Northern Ireland,Northern Ireland,54.373446,-6.558587,4.43,600,9,Bramley Seedling,M26
+NorthernIreland_012,Northern Ireland,Northern Ireland,54.464454,-6.610872,8.59,1600,23,Bramley Seedling,MM106
+NorthernIreland_013,Northern Ireland,Northern Ireland,54.465857,-6.571558,6.14,450,23,Braeburn,M25
+NorthernIreland_014,Northern Ireland,Northern Ireland,54.385223,-6.596381,5.66,2200,15,Gala,M9
+NorthernIreland_015,Northern Ireland,Northern Ireland,54.354347,-6.568492,1.99,2200,6,Braeburn,MM106
+NorthernIreland_016,Northern Ireland,Northern Ireland,54.395947,-6.522943,5.63,450,10,Bramley Seedling,M9
+NorthernIreland_017,Northern Ireland,Northern Ireland,54.415774,-6.555184,8.59,1600,23,Bramley Seedling,MM106
+NorthernIreland_018,Northern Ireland,Northern Ireland,54.404904,-6.543944,6.24,600,16,Bramley Seedling,MM106
+NorthernIreland_019,Northern Ireland,Northern Ireland,54.413386,-6.538279,6.43,600,5,Braeburn,M9
+NorthernIreland_020,Northern Ireland,Northern Ireland,54.397641,-6.565053,4.22,2200,23,Bramley Seedling,MM106
+NorthernIreland_021,Northern Ireland,Northern Ireland,54.402728,-6.535532,6.24,600,16,Bramley Seedling,MM106
+NorthernIreland_022,Northern Ireland,Northern Ireland,54.373319,-6.513071,8.59,1600,23,Bramley Seedling,MM106
+NorthernIreland_023,Northern Ireland,Northern Ireland,54.41823,-6.563092,2.1,1200,13,Bramley Seedling,MM106
+NorthernIreland_024,Northern Ireland,Northern Ireland,54.402758,-6.538198,6.43,600,5,Braeburn,M9
+NorthernIreland_025,Northern Ireland,Northern Ireland,54.448125,-6.602264,5.63,450,10,Bramley Seedling,M9
