@@ -319,33 +319,28 @@ def _growth_requested_table(dfy: pd.DataFrame) -> pd.DataFrame:
 
 
 
-
-
-
-
-
-
 # ============================================================
-# Overview tab (UPDATED) — WASTE + MASS-BASIS FIX:
-#   ✅ "Median bins on trees" uses util["initial_bins_on_trees"] (preferred)
-#      instead of trees_series[0] (which can already be reduced by day-0 decay removal).
-#   ✅ Waste metric = median( harvest_waste_removed_total + storage_total_waste_bins )
-#      - computed per-run if shared run-id exists
-#      - else fallback sum-of-medians
-#   ✅ Guardrail: waste_total_all is clamped to median initial bins (prevents impossible displays)
-#   ✅ Layout compacted:
-#      - starting inventory legend moved below plot
-#      - utilisation heatmap moved vertical, to the right of metrics
-#      - overall dashboard slightly smaller to better fit one screen
+# Overview tab — FULL SELF-CONTAINED VERSION
+#   ✅ Growth distribution back to yield (t/ha)
+#   ✅ "Median harvest bins" now means AVAILABLE bins from growth yield,
+#      computed from yield_t_ha -> orchard_area -> kg_per_bin
+#   ✅ Weekly fill-rate plot:
+#        - no legend
+#        - slightly wider layout
+#        - median solid lines
+#        - min/max dotted lines
+#        - shaded bands between min↔median and median↔max
+#   ✅ Harvest inventory quality plot includes min/max whiskers
+#   ✅ Metric cards now work in light mode and dark mode
 # ============================================================
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# assumes these exist in your project
+# assumes these already exist elsewhere in your file/project:
 # - _get_df, _get_nested, _ensure_schema_growth, _hist, _to_1d_float_array, _x_axis
 # - GRADES, ALL_GRADES, Q_THRESHOLDS, GRADE_COLORS
 
@@ -387,6 +382,13 @@ def _robust_storage_df_any(sim_results: Dict[str, Any]) -> pd.DataFrame:
         return storage
     maybe = _get_nested(sim_results, ["median_detail", "des_out", "storage_by_year"])
     return maybe.copy() if isinstance(maybe, pd.DataFrame) else pd.DataFrame()
+
+
+def _robust_storage_uncertainty_df(sim_results: Dict[str, Any]) -> pd.DataFrame:
+    df = _get_df(sim_results, "storage_uncertainty_by_year")
+    if not df.empty:
+        return df
+    return pd.DataFrame()
 
 
 def _median_detail_storage_row(sim_results: Dict[str, Any], year_sel: int) -> Optional[Dict[str, Any]]:
@@ -405,700 +407,15 @@ def _median_detail_storage_row(sim_results: Dict[str, Any], year_sel: int) -> Op
     return sel.iloc[0].to_dict()
 
 
-def _median_initial_bins(util: pd.DataFrame, year_sel: int) -> Optional[float]:
-    if util.empty or "season_year" not in util.columns:
+def _uncertainty_storage_row(sim_results: Dict[str, Any], year_sel: int) -> Optional[Dict[str, Any]]:
+    df = _robust_storage_uncertainty_df(sim_results)
+    if df.empty or "season_year" not in df.columns:
         return None
-    u = util.copy()
-    u["season_year"] = pd.to_numeric(u["season_year"], errors="coerce")
-    u = u[u["season_year"] == float(year_sel)]
-    if u.empty:
-        return None
-
-    if "initial_bins_on_trees" in u.columns:
-        v = pd.to_numeric(u["initial_bins_on_trees"], errors="coerce").dropna()
-        if not v.empty:
-            return float(v.median())
-
-    if "trees_series" in u.columns:
-        starts = []
-        for vv in u["trees_series"]:
-            if isinstance(vv, list) and len(vv) > 0:
-                try:
-                    starts.append(float(vv[0]))
-                except Exception:
-                    pass
-        if starts:
-            return float(np.nanmedian(np.asarray(starts, dtype=float)))
-
-    return None
-
-
-def _waste_total_all_sources(util: pd.DataFrame, storage: pd.DataFrame, year_sel: int) -> Optional[float]:
-    """
-    ALL waste (for overview) = harvest_waste_removed_total + storage_total_waste_bins (EOY)
-
-    Harvest waste preferred->fallback:
-      - waste_bins_removed_total
-      - waste_bins_removed
-      - waste_bins_short_term
-
-    Storage waste:
-      - total_waste_bins
-    """
-    u = util.copy() if isinstance(util, pd.DataFrame) else pd.DataFrame()
-    s = storage.copy() if isinstance(storage, pd.DataFrame) else pd.DataFrame()
-
-    if not u.empty and "season_year" in u.columns:
-        u["season_year"] = pd.to_numeric(u["season_year"], errors="coerce")
-        u = u[u["season_year"] == float(year_sel)].copy()
-    else:
-        u = pd.DataFrame()
-
-    if not s.empty and "season_year" in s.columns:
-        s["season_year"] = pd.to_numeric(s["season_year"], errors="coerce")
-        s = s[s["season_year"] == float(year_sel)].copy()
-    else:
-        s = pd.DataFrame()
-
-    harvest_col = None
-    for c in ["waste_bins_removed_total", "waste_bins_removed", "waste_bins_short_term"]:
-        if (not u.empty) and (c in u.columns):
-            harvest_col = c
-            break
-    storage_col = "total_waste_bins" if ((not s.empty) and ("total_waste_bins" in s.columns)) else None
-
-    if harvest_col is None and storage_col is None:
-        return None
-
-    run_id_candidates = ["run_id", "mc_run", "rep", "trial", "sim", "seed", "iteration"]
-    shared_id = None
-    for c in run_id_candidates:
-        if (not u.empty) and (not s.empty) and (c in u.columns) and (c in s.columns):
-            shared_id = c
-            break
-
-    if shared_id is not None:
-        uu = u[[shared_id, harvest_col]].copy() if harvest_col else u[[shared_id]].copy()
-        ss = s[[shared_id, storage_col]].copy() if storage_col else s[[shared_id]].copy()
-        if harvest_col:
-            uu[harvest_col] = pd.to_numeric(uu[harvest_col], errors="coerce").fillna(0.0)
-        if storage_col:
-            ss[storage_col] = pd.to_numeric(ss[storage_col], errors="coerce").fillna(0.0)
-        m = uu.merge(ss, on=shared_id, how="outer").fillna(0.0)
-        hw = m[harvest_col].to_numpy(dtype=float) if harvest_col else 0.0
-        sw = m[storage_col].to_numpy(dtype=float) if storage_col else 0.0
-        tot = np.asarray(hw, dtype=float) + np.asarray(sw, dtype=float)
-        tot = tot[np.isfinite(tot)]
-        return float(np.median(tot)) if tot.size else None
-
-    total = 0.0
-    got = False
-
-    if harvest_col is not None and not u.empty:
-        hw = pd.to_numeric(u[harvest_col], errors="coerce").dropna()
-        if not hw.empty:
-            total += float(hw.median())
-            got = True
-
-    if storage_col is not None and not s.empty:
-        sw = pd.to_numeric(s[storage_col], errors="coerce").dropna()
-        if not sw.empty:
-            total += float(sw.median())
-            got = True
-
-    return float(total) if got else None
-
-
-def _overview_colored_gradeband_hist(inv_hist: np.ndarray, title: str) -> go.Figure:
-    h = np.asarray(inv_hist, dtype=float)
-    h[~np.isfinite(h)] = 0.0
-    h = np.maximum(0.0, h)
-
-    q_bins = int(h.size)
-    edges = np.linspace(0.0, 1.0, q_bins + 1)
-    centers = (edges[:-1] + edges[1:]) / 2.0
-    width = float(edges[1] - edges[0]) if q_bins > 0 else 0.02
-
-    thr_p = float(Q_THRESHOLDS["Processor_min"])
-    thr_c2 = float(Q_THRESHOLDS["Class2_min"])
-    thr_c1 = float(Q_THRESHOLDS["Class1_min"])
-    thr_e = float(Q_THRESHOLDS["Extra_min"])
-
-    masks = {
-        "Waste": centers < thr_p,
-        "Processor": (centers >= thr_p) & (centers < thr_c2),
-        "Class2": (centers >= thr_c2) & (centers < thr_c1),
-        "Class1": (centers >= thr_c1) & (centers < thr_e),
-        "Extra": centers >= thr_e,
-    }
-
-    fig = go.Figure()
-    for g in ["Waste", "Processor", "Class2", "Class1", "Extra"]:
-        m = masks[g]
-        if not np.any(m):
-            continue
-        fig.add_trace(go.Bar(
-            x=centers[m],
-            y=h[m],
-            name=g,
-            marker=dict(color=GRADE_COLORS.get(g, "#888888")),
-            width=width,
-            hovertemplate=f"{g}<br>Quality=%{{x:.3f}}<br>Bins=%{{y:.1f}}<extra></extra>",
-        ))
-
-    thr_lines = [thr_p, thr_c2, thr_c1, thr_e]
-    ymax = float(np.nanmax(h)) if h.size else 1.0
-    ymax = max(1.0, ymax * 1.08)
-
-    for xthr in thr_lines:
-        fig.add_shape(
-            type="line",
-            x0=xthr, x1=xthr,
-            y0=0.0, y1=ymax,
-            line=dict(color="white", width=2, dash="dot"),
-        )
-
-    fig.update_layout(
-        title=title,
-        barmode="overlay",
-        xaxis_title="Quality (0–1)",
-        yaxis_title="Bins",
-        height=248,
-        margin=dict(l=52, r=12, t=46, b=1),
-        hovermode="x unified",
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            x=0.5,
-            xanchor="center",
-            y=-0.22,
-            yanchor="top",
-            title_text="",
-        ),
-    )
-    fig.update_xaxes(range=[0, 1])
-    fig.update_yaxes(range=[0, ymax])
-    return fig
-
-
-def _yield_dist_fig(mc: pd.DataFrame, year_sel: int, height: int) -> Optional[go.Figure]:
-    if mc.empty or "season_year" not in mc.columns or "yield_t_ha" not in mc.columns:
-        return None
-    dfy = mc[mc["season_year"] == int(year_sel)].copy()
-    yld = pd.to_numeric(dfy["yield_t_ha"], errors="coerce").dropna().to_numpy(dtype=float)
-    if yld.size == 0:
-        return None
-    xh, yh = _hist(yld, bins=45)
-    fig = go.Figure([go.Bar(x=xh, y=yh)])
-    fig.update_layout(
-        title="Yield distribution",
-        height=int(height),
-        margin=dict(l=52, r=12, t=46, b=1),
-    )
-    fig.update_xaxes(title="Yield (t/ha)", range=[0, max(1e-9, float(np.nanmax(xh)) if xh.size else 1.0)])
-    fig.update_yaxes(title="Frequency", range=[0, max(1.0, float(np.nanmax(yh)) * 1.12 if yh.size else 1.0)])
-    return fig
-
-
-def _util_heatmap_selected_year_vertical(util: pd.DataFrame, year_sel: int) -> Optional[go.Figure]:
-    if util.empty or "season_year" not in util.columns:
-        return None
-
-    u = util.copy()
-    u["season_year"] = pd.to_numeric(u["season_year"], errors="coerce")
-    u = u[u["season_year"] == float(year_sel)].copy()
-    if u.empty:
-        return None
-
-    stages = [
-        ("util_grade", "Graders"),
-        ("util_shuttle", "Filled shuttle"),
-        ("util_pick", "Harvesters"),
-        ("util_empty", "Empty shuttle"),
-    ]
-
-    ys, vals = [], []
-    for col, label in stages:
-        if col not in u.columns:
-            continue
-        v = pd.to_numeric(u[col], errors="coerce").dropna()
-        med = float(np.clip(v.median(), 0.0, 1.0)) if not v.empty else 0.0
-        ys.append(label)
-        vals.append(med)
-
-    if not ys:
-        return None
-
-    colorscale = [
-        [0.00, "#B0B0B0"],
-        [0.05, "#B0B0B0"],
-        [0.30, "#FFD966"],
-        [0.60, "#B7F0A0"],
-        [0.90, "#00B050"],
-        [1.00, "#D00000"],
-    ]
-
-    Z = np.asarray(vals, dtype=float).reshape(-1, 1)
-
-    fig = go.Figure(data=go.Heatmap(
-        z=Z,
-        x=[""],
-        y=ys,
-        zmin=0.0,
-        zmax=1.0,
-        colorscale=colorscale,
-        hoverongaps=False,
-        colorbar=dict(
-            title=dict(text="Util", side="top"),
-            thickness=16,
-            len=0.94,
-            y=0.50,
-            yanchor="middle",
-            x=1.10,
-        ),
-    ))
-
-    fig.update_layout(
-        title="Harvest utilisation (median)",
-        height=250,
-        margin=dict(l=6, r=42, t=42, b=1),
-    )
-    fig.update_xaxes(title="", showticklabels=False)
-    fig.update_yaxes(title="", automargin=True)
-    return fig
-
-
-def _starting_quality_fig(storage_row_med: Optional[Dict[str, Any]]) -> Optional[go.Figure]:
-    if not isinstance(storage_row_med, dict):
-        return None
-    inv_hist_week = storage_row_med.get("inventory_quality_hist_by_week", None)
-    if inv_hist_week is None:
-        return None
-    inv = np.asarray(inv_hist_week, dtype=float)
-    if inv.ndim != 2 or inv.shape[0] <= 0:
-        return None
-    return _overview_colored_gradeband_hist(inv[0, :], "Harvest inventory quality")
-
-
-def _estimated_revenue(storage_row_med: Optional[Dict[str, Any]], waste_total_all: Optional[float]) -> Optional[float]:
-    if not isinstance(storage_row_med, dict):
-        return None
-    ful = storage_row_med.get("fulfilled_by_week", None)
-    if not isinstance(ful, dict):
-        return None
-
-    price = {"Extra": 100.0, "Class1": 75.0, "Class2": 60.0, "Processor": 40.0, "Waste": -5.0}
-
-    delivered = {}
-    for g in GRADES:
-        a = _to_1d_float_array(ful.get(g, []))
-        delivered[g] = float(np.nansum(np.maximum(0.0, a))) if a is not None else 0.0
-
-    waste_bins_all = float(waste_total_all) if (waste_total_all is not None and np.isfinite(waste_total_all)) else float(
-        storage_row_med.get("total_waste_bins", 0.0) or 0.0
-    )
-
-    rev = 0.0
-    for g in GRADES:
-        rev += delivered.get(g, 0.0) * price[g]
-    rev += waste_bins_all * price["Waste"]
-    return float(rev)
-
-
-def _storage_grade_mix_pie(storage_row_med: Optional[Dict[str, Any]], config: Dict[str, Any]) -> Optional[go.Figure]:
-    if not isinstance(storage_row_med, dict):
-        return None
-    inv_by_week = storage_row_med.get("inventory_by_week", None)
-    if not isinstance(inv_by_week, dict):
-        return None
-
-    vals = {}
-    for g in ALL_GRADES:
-        a = _to_1d_float_array(inv_by_week.get(g, []))
-        vals[g] = float(np.nanmean(np.maximum(0.0, a))) if (a is not None and a.size) else 0.0
-
-    storage_factor = float(config.get("what_if_storage_factor", 1.0))
-    long_term_capacity = float(config.get("long_term_capacity", 2000))
-    effective_capacity = max(0.0, long_term_capacity * storage_factor)
-
-    used = float(sum(vals.get(g, 0.0) for g in ALL_GRADES))
-    vals["Empty / unused"] = float(max(0.0, effective_capacity - used))
-
-    labels = ["Extra", "Class1", "Class2", "Processor", "Waste", "Empty / unused"]
-    pie_vals = [vals.get(k, 0.0) for k in labels]
-    pie_colors = [
-        GRADE_COLORS["Extra"],
-        GRADE_COLORS["Class1"],
-        GRADE_COLORS["Class2"],
-        GRADE_COLORS["Processor"],
-        GRADE_COLORS["Waste"],
-        "#9E9E9E",
-    ]
-
-    fig = go.Figure(data=[go.Pie(labels=labels, values=pie_vals, hole=0.55, marker=dict(colors=pie_colors))])
-    fig.update_layout(
-        title="Storage usage",
-        height=248,
-        margin=dict(l=8, r=8, t=42, b=8),
-        legend=dict(orientation="v", x=1.02, xanchor="left", y=1.0, yanchor="top"),
-    )
-    return fig
-
-
-def _fillrate_grade_bars(storage_row_med: Optional[Dict[str, Any]], waste_total_all: Optional[float]) -> Optional[go.Figure]:
-    if not isinstance(storage_row_med, dict):
-        return None
-    dem = storage_row_med.get("demand_by_week", None)
-    ful = storage_row_med.get("fulfilled_by_week", None)
-    if not isinstance(dem, dict) or not isinstance(ful, dict):
-        return None
-
-    fr = {}
-    for g in GRADES:
-        d = _to_1d_float_array(dem.get(g, []))
-        f = _to_1d_float_array(ful.get(g, []))
-        if d is None or f is None or d.size == 0 or f.size == 0:
-            fr[g] = 1.0
-            continue
-        dt = float(np.nansum(np.maximum(0.0, d)))
-        ft = float(np.nansum(np.maximum(0.0, f)))
-        fr[g] = float(ft / dt) if dt > 1e-9 else 1.0
-
-    waste_all = float(waste_total_all) if (waste_total_all is not None and np.isfinite(waste_total_all)) else float(
-        storage_row_med.get("total_waste_bins", 0.0) or 0.0
-    )
-
-    fulfilled_total = float(storage_row_med.get("total_fulfilled_bins", 0.0) or 0.0)
-    ending_inv = float(storage_row_med.get("ending_inventory_bins", 0.0) or 0.0)
-    denom = max(1e-9, fulfilled_total + ending_inv + waste_all)
-    waste_pct = float(waste_all / denom)
-
-    labels = ["Extra", "Class1", "Class2", "Processor", "Waste"]
-    values = [
-        fr.get("Extra", 1.0) * 100.0,
-        fr.get("Class1", 1.0) * 100.0,
-        fr.get("Class2", 1.0) * 100.0,
-        fr.get("Processor", 1.0) * 100.0,
-        waste_pct * 100.0,
-    ]
-    colors = [
-        GRADE_COLORS["Extra"],
-        GRADE_COLORS["Class1"],
-        GRADE_COLORS["Class2"],
-        GRADE_COLORS["Processor"],
-        GRADE_COLORS["Waste"],
-    ]
-
-    fig = go.Figure([go.Bar(x=labels, y=values, marker=dict(color=colors))])
-    fig.update_layout(
-        title="Fill rate by grade + waste",
-        yaxis_title="Fill rate(%)",
-        height=248,
-        margin=dict(l=52, r=12, t=42, b=38),
-    )
-    fig.update_yaxes(range=[0, 100])
-    return fig
-
-
-def _fillrate_weekly_plot(storage_row_med: Optional[Dict[str, Any]]) -> Optional[go.Figure]:
-    if not isinstance(storage_row_med, dict):
-        return None
-    fr = storage_row_med.get("fill_rate_by_week", None)
-    if not isinstance(fr, dict):
-        return None
-
-    T = None
-    for g in GRADES:
-        a = _to_1d_float_array(fr.get(g, []))
-        if a is not None and a.size > 0:
-            T = int(a.size)
-            break
-    if T is None:
-        return None
-
-    x = _x_axis(T)
-    fig = go.Figure()
-    for g in GRADES:
-        a = _to_1d_float_array(fr.get(g, []))
-        if a is None or a.size == 0:
-            continue
-        fig.add_trace(go.Scatter(
-            x=x, y=np.asarray(a, dtype=float) * 100.0,
-            mode="lines", name=g,
-            line=dict(color=GRADE_COLORS.get(g, None), width=3),
-            line_shape="hv",
-        ))
-    fig.update_layout(
-        title="Weekly fill rate",
-        xaxis_title="Week",
-        yaxis_title="Fill rate (%)",
-        height=248,
-        hovermode="x unified",
-        margin=dict(l=52, r=90, t=42, b=38),
-        legend=dict(x=1.01, xanchor="left", y=1.0, yanchor="top"),
-    )
-    fig.update_yaxes(range=[0, 100])
-    return fig
-
-
-def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> None:
-    st.subheader("Dashboard Overview")
-
-    years = _pick_years_from_any(sim_results)
-    if not years:
-        st.info("Overview unavailable (no years found).")
-        return
-    year_sel = _year_slider(years)
-
-    mc = _ensure_schema_growth(_get_df(sim_results, "mc_yearly"))
-    util = _robust_util_df(sim_results)
-    storage = _robust_storage_df_any(sim_results)
-    storage_row_med = _median_detail_storage_row(sim_results, year_sel)
-
-    initial_bins_med = _median_initial_bins(util, int(year_sel))
-    waste_total_all = _waste_total_all_sources(util=util, storage=storage, year_sel=int(year_sel))
-
-    if (waste_total_all is not None and np.isfinite(waste_total_all)
-            and initial_bins_med is not None and np.isfinite(initial_bins_med)):
-        waste_total_all = float(min(waste_total_all, initial_bins_med))
-
-    row1_h = 305
-    row2_h = 248
-
-    c1, c2, c3 = st.columns(3, vertical_alignment="top")
-
-    with c1:
-        fig_y = _yield_dist_fig(mc, year_sel, height=row1_h)
-        if fig_y is None:
-            st.info("Yield distribution unavailable.")
-        else:
-            st.plotly_chart(
-                fig_y,
-                use_container_width=True,
-                config={"displayModeBar": False},
-                key=f"ov_yield_dist_{year_sel}",
-            )
-
-    with c2:
-        fig_q0 = _starting_quality_fig(storage_row_med)
-        if fig_q0 is None:
-            st.info("Starting quality distribution unavailable.")
-        else:
-            fig_q0.update_layout(height=int(row1_h))
-            st.plotly_chart(
-                fig_q0,
-                use_container_width=True,
-                config={"displayModeBar": False},
-                key=f"ov_quality_week0_{year_sel}",
-            )
-
-    with c3:
-        y_med = None
-        if not mc.empty and "season_year" in mc.columns and "yield_t_ha" in mc.columns:
-            dfy = mc[mc["season_year"] == int(year_sel)].copy()
-            yv = pd.to_numeric(dfy["yield_t_ha"], errors="coerce").dropna()
-            if not yv.empty:
-                y_med = float(yv.median())
-
-        bins_on_tree_med = initial_bins_med
-
-        top_util_pct = None
-        if not util.empty and "season_year" in util.columns:
-            u = util.copy()
-            u["season_year"] = pd.to_numeric(u["season_year"], errors="coerce")
-            u = u[u["season_year"] == float(year_sel)]
-            if not u.empty:
-                candidates = ["util_grade", "util_shuttle", "util_pick", "util_empty"]
-                best = None
-                for col in candidates:
-                    if col not in u.columns:
-                        continue
-                    v = pd.to_numeric(u[col], errors="coerce").dropna()
-                    if v.empty:
-                        continue
-                    medp = float(np.clip(v.median(), 0.0, 1.0) * 100.0)
-                    best = medp if (best is None or medp > best) else best
-                top_util_pct = best
-
-        fill_rate_med = None
-        if not storage.empty and "season_year" in storage.columns and "fill_rate_overall" in storage.columns:
-            s = storage.copy()
-            s["season_year"] = pd.to_numeric(s["season_year"], errors="coerce")
-            s = s[s["season_year"] == float(year_sel)]
-            fr = pd.to_numeric(s["fill_rate_overall"], errors="coerce").dropna()
-            if not fr.empty:
-                fill_rate_med = float(np.clip(fr.median(), 0.0, 1.0) * 100.0)
-
-        waste_bins_all = float(waste_total_all) if (waste_total_all is not None and np.isfinite(waste_total_all)) else None
-        revenue_est = _estimated_revenue(storage_row_med, waste_total_all=waste_total_all)
-
-        metrics_col, hm_col = st.columns([4.2, 1.4], vertical_alignment="top")
-
-        with metrics_col:
-            r1a, r1b = st.columns(2)
-            r2a, r2b = st.columns(2)
-            r3a, r3b = st.columns(2)
-
-            with r1a:
-                st.metric("Median yield (t/ha)", "—" if y_med is None else f"{y_med:.2f}")
-            with r1b:
-                st.metric("Median bins on trees", "—" if bins_on_tree_med is None else f"{bins_on_tree_med:.0f}")
-
-            with r2a:
-                st.metric("Highest utilisation (%)", "—" if top_util_pct is None else f"{top_util_pct:.0f}%")
-            with r2b:
-                st.metric("Fill rate (%)", "—" if fill_rate_med is None else f"{fill_rate_med:.0f}%")
-
-            with r3a:
-                st.metric("Waste bins", "—" if waste_bins_all is None else f"{waste_bins_all:.0f}")
-            with r3b:
-                st.metric("Estimated revenue", "—" if revenue_est is None else f"£{revenue_est:,.0f}")
-
-        with hm_col:
-            fig_hm = _util_heatmap_selected_year_vertical(util, year_sel)
-            if fig_hm is None:
-                st.info("Utilisation heatmap unavailable.")
-            else:
-                st.plotly_chart(
-                    fig_hm,
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                    key=f"ov_util_hm_{year_sel}",
-                )
-
-    st.divider()
-    b1, b2, b3 = st.columns(3, vertical_alignment="top")
-
-    with b1:
-        fig_pie = _storage_grade_mix_pie(storage_row_med, config)
-        if fig_pie is None:
-            st.info("Storage utilisation mix unavailable.")
-        else:
-            fig_pie.update_layout(height=int(row2_h))
-            st.plotly_chart(
-                fig_pie,
-                use_container_width=True,
-                config={"displayModeBar": False},
-                key=f"ov_storage_pie_{year_sel}",
-            )
-
-    with b2:
-        fig_bar = _fillrate_grade_bars(storage_row_med, waste_total_all=waste_total_all)
-        if fig_bar is None:
-            st.info("Grade fill-rate bars unavailable.")
-        else:
-            fig_bar.update_layout(height=int(row2_h))
-            st.plotly_chart(
-                fig_bar,
-                use_container_width=True,
-                config={"displayModeBar": False},
-                key=f"ov_fillrate_bars_{year_sel}",
-            )
-
-    with b3:
-        fig_fr = _fillrate_weekly_plot(storage_row_med)
-        if fig_fr is None:
-            st.info("Weekly fill-rate plot unavailable.")
-        else:
-            fig_fr.update_layout(height=int(row2_h))
-            st.plotly_chart(
-                fig_fr,
-                use_container_width=True,
-                config={"displayModeBar": False},
-                key=f"ov_fillrate_weekly_{year_sel}",
-            )
-
-
-
-
-
-
-
-
-
-
-
-
-# ============================================================
-# Overview tab (UPDATED) — WASTE + MASS-BASIS FIX:
-#   ✅ "Median bins on trees" uses util["initial_bins_on_trees"] (preferred)
-#      instead of trees_series[0] (which can already be reduced by day-0 decay removal).
-#   ✅ Waste metric = median( harvest_waste_removed_total + storage_total_waste_bins )
-#      - computed per-run if shared run-id exists
-#      - else fallback sum-of-medians
-#   ✅ Guardrail: waste_total_all is clamped to median initial bins (prevents impossible displays)
-#   ✅ Layout update:
-#      - removed selected extra metrics
-#      - heatmap placed underneath metrics
-#      - divider moved closer to top row
-#      - bottom row vertically aligned
-#      - heatmap shifted left
-#      - heatmap colourbar stretched further
-#      - weekly fill-rate made taller
-#      - starting inventory legend removed
-# ============================================================
-
-from typing import Any, Dict, List, Optional
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-import streamlit as st
-
-# assumes these exist in your project
-# - _get_df, _get_nested, _ensure_schema_growth, _hist, _to_1d_float_array, _x_axis
-# - GRADES, ALL_GRADES, Q_THRESHOLDS, GRADE_COLORS
-
-
-def _pick_years_from_any(sim_results: Dict[str, Any]) -> List[int]:
-    for key in ["mc_yearly", "harvest_util_by_year", "storage_by_year"]:
-        df = _get_df(sim_results, key)
-        if not df.empty and "season_year" in df.columns:
-            yrs = sorted(pd.to_numeric(df["season_year"], errors="coerce").dropna().astype(int).unique().tolist())
-            if yrs:
-                return yrs
-    med_storage = _get_nested(sim_results, ["median_detail", "des_out", "storage_by_year"])
-    if isinstance(med_storage, pd.DataFrame) and not med_storage.empty and "season_year" in med_storage.columns:
-        yrs = sorted(pd.to_numeric(med_storage["season_year"], errors="coerce").dropna().astype(int).unique().tolist())
-        return yrs
-    return []
-
-
-def _year_slider(years: List[int]) -> int:
-    if not years:
-        return 0
-    if len(years) == 1:
-        st.slider("Year", years[0], years[0], years[0], 1, key="overview_year_slider")
-        return years[0]
-    return int(st.slider("Year", int(years[0]), int(years[-1]), int(years[-1]), 1, key="overview_year_slider"))
-
-
-def _robust_util_df(sim_results: Dict[str, Any]) -> pd.DataFrame:
-    util = _get_df(sim_results, "harvest_util_by_year")
-    if not util.empty:
-        return util
-    maybe = _get_nested(sim_results, ["median_detail", "des_out", "harvest_yearly"])
-    return maybe.copy() if isinstance(maybe, pd.DataFrame) else pd.DataFrame()
-
-
-def _robust_storage_df_any(sim_results: Dict[str, Any]) -> pd.DataFrame:
-    storage = _get_df(sim_results, "storage_by_year")
-    if not storage.empty:
-        return storage
-    maybe = _get_nested(sim_results, ["median_detail", "des_out", "storage_by_year"])
-    return maybe.copy() if isinstance(maybe, pd.DataFrame) else pd.DataFrame()
-
-
-def _median_detail_storage_row(sim_results: Dict[str, Any], year_sel: int) -> Optional[Dict[str, Any]]:
-    med = sim_results.get("median_detail", {})
-    des_out = med.get("des_out") if isinstance(med, dict) else None
-    storage_med = des_out.get("storage_by_year", None) if isinstance(des_out, dict) else None
-    if not isinstance(storage_med, pd.DataFrame) or storage_med.empty or "season_year" not in storage_med.columns:
-        return None
-    df = storage_med.copy()
-    df["season_year"] = pd.to_numeric(df["season_year"], errors="coerce").astype("Int64")
-    df = df.dropna(subset=["season_year"]).copy()
-    df["season_year"] = df["season_year"].astype(int)
-    sel = df[df["season_year"] == int(year_sel)]
+    d = df.copy()
+    d["season_year"] = pd.to_numeric(d["season_year"], errors="coerce").astype("Int64")
+    d = d.dropna(subset=["season_year"]).copy()
+    d["season_year"] = d["season_year"].astype(int)
+    sel = d[d["season_year"] == int(year_sel)]
     if sel.empty:
         return None
     return sel.iloc[0].to_dict()
@@ -1195,78 +512,122 @@ def _waste_total_all_sources(util: pd.DataFrame, storage: pd.DataFrame, year_sel
     return float(total) if got else None
 
 
-def _overview_colored_gradeband_hist(inv_hist: np.ndarray, title: str) -> go.Figure:
-    h = np.asarray(inv_hist, dtype=float)
-    h[~np.isfinite(h)] = 0.0
-    h = np.maximum(0.0, h)
+def _safe_np_2d(x: Any) -> Optional[np.ndarray]:
+    if x is None:
+        return None
+    try:
+        a = np.asarray(x, dtype=float)
+    except Exception:
+        return None
+    if a.ndim != 2 or a.size == 0:
+        return None
+    a[~np.isfinite(a)] = 0.0
+    a = np.maximum(a, 0.0)
+    return a
 
-    q_bins = int(h.size)
-    edges = np.linspace(0.0, 1.0, q_bins + 1)
-    centers = (edges[:-1] + edges[1:]) / 2.0
-    width = float(edges[1] - edges[0]) if q_bins > 0 else 0.02
 
-    thr_p = float(Q_THRESHOLDS["Processor_min"])
-    thr_c2 = float(Q_THRESHOLDS["Class2_min"])
-    thr_c1 = float(Q_THRESHOLDS["Class1_min"])
-    thr_e = float(Q_THRESHOLDS["Extra_min"])
-
-    masks = {
-        "Waste": centers < thr_p,
-        "Processor": (centers >= thr_p) & (centers < thr_c2),
-        "Class2": (centers >= thr_c2) & (centers < thr_c1),
-        "Class1": (centers >= thr_c1) & (centers < thr_e),
-        "Extra": centers >= thr_e,
-    }
-
-    fig = go.Figure()
-    for g in ["Waste", "Processor", "Class2", "Class1", "Extra"]:
-        m = masks[g]
-        if not np.any(m):
+def _dict_grades_weeks_from_row(row: Dict[str, Any], key: str, weeks: int, grades: List[str]) -> Optional[Dict[str, np.ndarray]]:
+    d = row.get(key, None)
+    if not isinstance(d, dict):
+        return None
+    out: Dict[str, np.ndarray] = {}
+    ok = False
+    for g in grades:
+        a = _to_1d_float_array(d.get(g, []))
+        if a is None:
             continue
-        fig.add_trace(go.Bar(
-            x=centers[m],
-            y=h[m],
-            name=g,
-            marker=dict(color=GRADE_COLORS.get(g, "#888888")),
-            width=width,
-            hovertemplate=f"{g}<br>Quality=%{{x:.3f}}<br>Bins=%{{y:.1f}}<extra></extra>",
-            showlegend=False,
-        ))
+        arr = np.asarray(a, dtype=float)
+        tmp = np.zeros(int(weeks), dtype=float)
+        n = min(int(weeks), int(arr.size))
+        if n > 0:
+            tmp[:n] = np.maximum(0.0, arr[:n])
+        out[g] = tmp
+        ok = True
+    return out if ok else None
 
-    thr_lines = [thr_p, thr_c2, thr_c1, thr_e]
-    ymax = float(np.nanmax(h)) if h.size else 1.0
-    ymax = max(1.0, ymax * 1.08)
 
-    for xthr in thr_lines:
-        fig.add_shape(
-            type="line",
-            x0=xthr, x1=xthr,
-            y0=0.0, y1=ymax,
-            line=dict(color="white", width=2, dash="dot"),
-        )
+def _metric_triplet_html(label: str, median_txt: str, plus_txt: str, minus_txt: str) -> str:
+    return f"""
+    <div style="
+        border:1px solid rgba(128,128,128,0.25);
+        border-radius:10px;
+        padding:10px 12px;
+        margin-bottom:8px;
+        background:rgba(127,127,127,0.05);
+        color:inherit;
+    ">
+        <div style="
+            font-size:0.88rem;
+            color:inherit;
+            opacity:0.75;
+            margin-bottom:6px;
+        ">
+            {label}
+        </div>
+        <div style="display:flex; align-items:stretch; gap:6px; color:inherit;">
+            <div style="
+                font-size:1.65rem;
+                font-weight:700;
+                line-height:1.1;
+                white-space:nowrap;
+                color:inherit;
+            ">
+                {median_txt}
+            </div>
+            <div style="
+                display:flex;
+                flex-direction:column;
+                justify-content:center;
+                line-height:1.05;
+                font-size:0.78rem;
+                color:inherit;
+                opacity:0.85;
+                margin-top:1px;
+            ">
+                <div>{plus_txt}</div>
+                <div style="margin-top:4px;">{minus_txt}</div>
+            </div>
+        </div>
+    </div>
+    """
 
-    fig.update_layout(
-        title=dict(text=title, x=0.0, xanchor="left"),
-        barmode="overlay",
-        xaxis_title="Quality (0–1)",
-        yaxis_title="Bins",
-        height=350,
-        margin=dict(l=52, r=12, t=46, b=1),
-        hovermode="x unified",
-        showlegend=False,
-    )
-    fig.update_xaxes(range=[0, 1])
-    fig.update_yaxes(range=[0, ymax])
-    return fig
+
+def _fmt_delta_signed(delta: Optional[float], prefix: str = "", suffix: str = "", decimals: int = 0) -> str:
+    if delta is None:
+        return "—"
+    try:
+        v = float(delta)
+    except Exception:
+        return "—"
+    if not np.isfinite(v):
+        return "—"
+    return f"{prefix}{v:+,.{decimals}f}{suffix}"
+
+
+def _fmt_value(v: Optional[float], prefix: str = "", suffix: str = "", decimals: int = 0) -> str:
+    if v is None:
+        return "—"
+    try:
+        x = float(v)
+    except Exception:
+        return "—"
+    if not np.isfinite(x):
+        return "—"
+    return f"{prefix}{x:,.{decimals}f}{suffix}"
 
 
 def _yield_dist_fig(mc: pd.DataFrame, year_sel: int, height: int) -> Optional[go.Figure]:
+    """
+    Growth distribution plot stays in t/ha from the growth module.
+    """
     if mc.empty or "season_year" not in mc.columns or "yield_t_ha" not in mc.columns:
         return None
+
     dfy = mc[mc["season_year"] == int(year_sel)].copy()
     yld = pd.to_numeric(dfy["yield_t_ha"], errors="coerce").dropna().to_numpy(dtype=float)
     if yld.size == 0:
         return None
+
     xh, yh = _hist(yld, bins=45)
     fig = go.Figure([go.Bar(x=xh, y=yh)])
     fig.update_layout(
@@ -1357,7 +718,123 @@ def _util_heatmap_selected_year_horizontal(util: pd.DataFrame, year_sel: int) ->
     return fig
 
 
-def _starting_quality_fig(storage_row_med: Optional[Dict[str, Any]]) -> Optional[go.Figure]:
+def _overview_colored_gradeband_hist_with_whiskers(
+    inv_med: np.ndarray,
+    inv_min: Optional[np.ndarray],
+    inv_max: Optional[np.ndarray],
+    title: str,
+) -> go.Figure:
+    h_med = np.asarray(inv_med, dtype=float)
+    h_med[~np.isfinite(h_med)] = 0.0
+    h_med = np.maximum(0.0, h_med)
+
+    q_bins = int(h_med.size)
+    edges = np.linspace(0.0, 1.0, q_bins + 1)
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    width = float(edges[1] - edges[0]) if q_bins > 0 else 0.02
+
+    thr_p = float(Q_THRESHOLDS["Processor_min"])
+    thr_c2 = float(Q_THRESHOLDS["Class2_min"])
+    thr_c1 = float(Q_THRESHOLDS["Class1_min"])
+    thr_e = float(Q_THRESHOLDS["Extra_min"])
+
+    masks = {
+        "Waste": centers < thr_p,
+        "Processor": (centers >= thr_p) & (centers < thr_c2),
+        "Class2": (centers >= thr_c2) & (centers < thr_c1),
+        "Class1": (centers >= thr_c1) & (centers < thr_e),
+        "Extra": centers >= thr_e,
+    }
+
+    fig = go.Figure()
+
+    for g in ["Waste", "Processor", "Class2", "Class1", "Extra"]:
+        m = masks[g]
+        if not np.any(m):
+            continue
+        fig.add_trace(go.Bar(
+            x=centers[m],
+            y=h_med[m],
+            name=g,
+            marker=dict(color=GRADE_COLORS.get(g, "#888888")),
+            width=width,
+            hovertemplate=f"{g}<br>Quality=%{{x:.3f}}<br>Median bins=%{{y:.2f}}<extra></extra>",
+            showlegend=False,
+        ))
+
+    ymax = float(np.nanmax(h_med)) if h_med.size else 1.0
+    ymax = max(1.0, ymax * 1.15)
+
+    for xthr in [thr_p, thr_c2, thr_c1, thr_e]:
+        fig.add_shape(
+            type="line",
+            x0=xthr, x1=xthr,
+            y0=0.0, y1=ymax,
+            line=dict(color="white", width=2, dash="dot"),
+        )
+
+    if inv_min is not None and inv_max is not None:
+        h_min = np.asarray(inv_min, dtype=float)
+        h_max = np.asarray(inv_max, dtype=float)
+        if h_min.shape == h_med.shape and h_max.shape == h_med.shape:
+            h_min = np.maximum(0.0, np.nan_to_num(h_min, nan=0.0, posinf=0.0, neginf=0.0))
+            h_max = np.maximum(0.0, np.nan_to_num(h_max, nan=0.0, posinf=0.0, neginf=0.0))
+            lo = np.minimum(h_min, h_max)
+            hi = np.maximum(h_min, h_max)
+
+            dx = width * 0.35
+            for x0, y_lo, y_hi in zip(centers, lo, hi):
+                fig.add_shape(
+                    type="line",
+                    x0=float(x0), x1=float(x0),
+                    y0=float(y_lo), y1=float(y_hi),
+                    line=dict(color="grey", width=2),
+                )
+                fig.add_shape(
+                    type="line",
+                    x0=float(x0 - dx), x1=float(x0 + dx),
+                    y0=float(y_hi), y1=float(y_hi),
+                    line=dict(color="grey", width=2),
+                )
+                fig.add_shape(
+                    type="line",
+                    x0=float(x0 - dx), x1=float(x0 + dx),
+                    y0=float(y_lo), y1=float(y_lo),
+                    line=dict(color="grey", width=2),
+                )
+            ymax = max(ymax, float(np.nanmax(hi)) * 1.10 if hi.size else ymax)
+
+    fig.update_layout(
+        title=dict(text=title, x=0.0, xanchor="left"),
+        barmode="overlay",
+        xaxis_title="Quality (0–1)",
+        yaxis_title="Bins",
+        height=350,
+        margin=dict(l=52, r=12, t=46, b=1),
+        hovermode="x unified",
+        showlegend=False,
+    )
+    fig.update_xaxes(range=[0, 1])
+    fig.update_yaxes(range=[0, ymax])
+    return fig
+
+
+def _starting_quality_fig(storage_row_med: Optional[Dict[str, Any]], storage_row_unc: Optional[Dict[str, Any]]) -> Optional[go.Figure]:
+    if isinstance(storage_row_unc, dict):
+        med_2d = _safe_np_2d(storage_row_unc.get("inventory_quality_hist_median_by_week", None))
+        min_2d = _safe_np_2d(storage_row_unc.get("inventory_quality_hist_min_by_week", None))
+        max_2d = _safe_np_2d(storage_row_unc.get("inventory_quality_hist_max_by_week", None))
+        if med_2d is not None and med_2d.shape[0] > 0:
+            med_vec = med_2d[0, :]
+            min_vec = min_2d[0, :] if (min_2d is not None and min_2d.shape[1] == med_2d.shape[1] and min_2d.shape[0] > 0) else None
+            max_vec = max_2d[0, :] if (max_2d is not None and max_2d.shape[1] == med_2d.shape[1] and max_2d.shape[0] > 0) else None
+            return _overview_colored_gradeband_hist_with_whiskers(
+                inv_med=med_vec,
+                inv_min=min_vec,
+                inv_max=max_vec,
+                title="Harvest inventory quality",
+            )
+
     if not isinstance(storage_row_med, dict):
         return None
     inv_hist_week = storage_row_med.get("inventory_quality_hist_by_week", None)
@@ -1366,32 +843,178 @@ def _starting_quality_fig(storage_row_med: Optional[Dict[str, Any]]) -> Optional
     inv = np.asarray(inv_hist_week, dtype=float)
     if inv.ndim != 2 or inv.shape[0] <= 0:
         return None
-    return _overview_colored_gradeband_hist(inv[0, :], "Harvest inventory quality")
-
-
-def _estimated_revenue(storage_row_med: Optional[Dict[str, Any]], waste_total_all: Optional[float]) -> Optional[float]:
-    if not isinstance(storage_row_med, dict):
-        return None
-    ful = storage_row_med.get("fulfilled_by_week", None)
-    if not isinstance(ful, dict):
-        return None
-
-    price = {"Extra": 100.0, "Class1": 75.0, "Class2": 60.0, "Processor": 40.0, "Waste": -5.0}
-
-    delivered = {}
-    for g in GRADES:
-        a = _to_1d_float_array(ful.get(g, []))
-        delivered[g] = float(np.nansum(np.maximum(0.0, a))) if a is not None else 0.0
-
-    waste_bins_all = float(waste_total_all) if (waste_total_all is not None and np.isfinite(waste_total_all)) else float(
-        storage_row_med.get("total_waste_bins", 0.0) or 0.0
+    return _overview_colored_gradeband_hist_with_whiskers(
+        inv_med=inv[0, :],
+        inv_min=None,
+        inv_max=None,
+        title="Harvest inventory quality",
     )
 
-    rev = 0.0
+
+def _overview_fillrate_weekly_plot(
+    storage_row_med: Optional[Dict[str, Any]],
+    storage_row_unc: Optional[Dict[str, Any]],
+) -> Optional[go.Figure]:
+    fr_med: Optional[Dict[str, np.ndarray]] = None
+    fr_min: Optional[Dict[str, np.ndarray]] = None
+    fr_max: Optional[Dict[str, np.ndarray]] = None
+
+    T = None
+
+    if isinstance(storage_row_unc, dict):
+        weeks = int(storage_row_unc.get("weeks", 52) or 52)
+        fr_med = _dict_grades_weeks_from_row(storage_row_unc, "fill_rate_median_by_week", weeks, GRADES)
+        fr_min = _dict_grades_weeks_from_row(storage_row_unc, "fill_rate_min_by_week", weeks, GRADES)
+        fr_max = _dict_grades_weeks_from_row(storage_row_unc, "fill_rate_max_by_week", weeks, GRADES)
+        if fr_med is not None:
+            for g in GRADES:
+                a = fr_med.get(g, None)
+                if a is not None and len(a) > 0:
+                    T = int(len(a))
+                    break
+
+    if T is None and isinstance(storage_row_med, dict):
+        fr0 = storage_row_med.get("fill_rate_by_week", None)
+        if isinstance(fr0, dict):
+            for g in GRADES:
+                a = _to_1d_float_array(fr0.get(g, []))
+                if a is not None and a.size > 0:
+                    T = int(a.size)
+                    break
+            if T is not None:
+                fr_med = {}
+                for g in GRADES:
+                    arr = _to_1d_float_array(fr0.get(g, []))
+                    if arr is None:
+                        fr_med[g] = np.zeros(T, dtype=float)
+                    else:
+                        tmp = np.zeros(T, dtype=float)
+                        n = min(T, int(arr.size))
+                        if n > 0:
+                            tmp[:n] = arr[:n]
+                        fr_med[g] = np.clip(tmp, 0.0, 1.0)
+
+    if T is None or fr_med is None:
+        return None
+
+    x = _x_axis(T)
+    fig = go.Figure()
+
+    def _rgba_from_hex(hex_color: str, alpha: float) -> str:
+        c = str(hex_color or "#888888").lstrip("#")
+        if len(c) != 6:
+            return f"rgba(136,136,136,{alpha})"
+        r = int(c[0:2], 16)
+        g = int(c[2:4], 16)
+        b = int(c[4:6], 16)
+        return f"rgba({r},{g},{b},{alpha})"
+
     for g in GRADES:
-        rev += delivered.get(g, 0.0) * price[g]
-    rev += waste_bins_all * price["Waste"]
-    return float(rev)
+        base_color = GRADE_COLORS.get(g, "#888888")
+
+        y_med = np.asarray(fr_med.get(g, np.zeros(T, dtype=float)), dtype=float)
+        if y_med.size != T:
+            tmp = np.zeros(T, dtype=float)
+            n = min(T, int(y_med.size))
+            if n > 0:
+                tmp[:n] = y_med[:n]
+            y_med = tmp
+        y_med = np.clip(y_med, 0.0, 1.0) * 100.0
+
+        y_min = None
+        if fr_min is not None and g in fr_min:
+            arr = np.asarray(fr_min[g], dtype=float)
+            if arr.size != T:
+                tmp = np.zeros(T, dtype=float)
+                n = min(T, int(arr.size))
+                if n > 0:
+                    tmp[:n] = arr[:n]
+                arr = tmp
+            y_min = np.clip(arr, 0.0, 1.0) * 100.0
+
+        y_max = None
+        if fr_max is not None and g in fr_max:
+            arr = np.asarray(fr_max[g], dtype=float)
+            if arr.size != T:
+                tmp = np.zeros(T, dtype=float)
+                n = min(T, int(arr.size))
+                if n > 0:
+                    tmp[:n] = arr[:n]
+                arr = tmp
+            y_max = np.clip(arr, 0.0, 1.0) * 100.0
+
+        if y_min is not None:
+            fig.add_trace(go.Scatter(
+                x=x, y=y_min,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo="skip",
+                line_shape="hv",
+            ))
+            fig.add_trace(go.Scatter(
+                x=x, y=y_med,
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor=_rgba_from_hex(base_color, 0.10),
+                showlegend=False,
+                hoverinfo="skip",
+                line_shape="hv",
+            ))
+
+        if y_max is not None:
+            fig.add_trace(go.Scatter(
+                x=x, y=y_max,
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor=_rgba_from_hex(base_color, 0.16),
+                showlegend=False,
+                hoverinfo="skip",
+                line_shape="hv",
+            ))
+
+        fig.add_trace(go.Scatter(
+            x=x, y=y_med,
+            mode="lines",
+            name=g,
+            line=dict(color=base_color, width=3),
+            line_shape="hv",
+            showlegend=False,
+        ))
+
+        if y_min is not None:
+            fig.add_trace(go.Scatter(
+                x=x, y=y_min,
+                mode="lines",
+                line=dict(color=base_color, width=2, dash="dot"),
+                line_shape="hv",
+                showlegend=False,
+                hoverinfo="skip",
+            ))
+
+        if y_max is not None:
+            fig.add_trace(go.Scatter(
+                x=x, y=y_max,
+                mode="lines",
+                line=dict(color=base_color, width=2, dash="dot"),
+                line_shape="hv",
+                showlegend=False,
+                hoverinfo="skip",
+            ))
+
+    fig.update_layout(
+        title=dict(text="Weekly fill rate", x=0.0, xanchor="left"),
+        xaxis_title="Week",
+        yaxis_title="Fill rate (%)",
+        height=500,
+        hovermode="x unified",
+        margin=dict(l=52, r=30, t=42, b=32),
+        showlegend=False,
+    )
+    fig.update_yaxes(range=[0, 100])
+    return fig
 
 
 def _storage_grade_mix_pie(storage_row_med: Optional[Dict[str, Any]], config: Dict[str, Any]) -> Optional[go.Figure]:
@@ -1489,45 +1112,156 @@ def _fillrate_grade_bars(storage_row_med: Optional[Dict[str, Any]], waste_total_
     return fig
 
 
-def _fillrate_weekly_plot(storage_row_med: Optional[Dict[str, Any]]) -> Optional[go.Figure]:
-    if not isinstance(storage_row_med, dict):
-        return None
-    fr = storage_row_med.get("fill_rate_by_week", None)
-    if not isinstance(fr, dict):
-        return None
+def _available_bins_from_growth_summary(
+    mc: pd.DataFrame,
+    year_sel: int,
+    orchard_area: float,
+    kg_per_bin: float,
+) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    if mc.empty or "season_year" not in mc.columns or "yield_t_ha" not in mc.columns:
+        return None, None, None
 
-    T = None
-    for g in GRADES:
-        a = _to_1d_float_array(fr.get(g, []))
-        if a is not None and a.size > 0:
-            T = int(a.size)
+    dfy = mc[mc["season_year"] == int(year_sel)].copy()
+    if dfy.empty:
+        return None, None, None
+
+    y = pd.to_numeric(dfy["yield_t_ha"], errors="coerce").dropna().to_numpy(dtype=float)
+    if y.size == 0:
+        return None, None, None
+
+    bins = y * float(max(0.0, orchard_area)) * 1000.0 / max(1e-9, float(kg_per_bin))
+    bins = bins[np.isfinite(bins)]
+    if bins.size == 0:
+        return None, None, None
+
+    med = float(np.median(bins))
+    vmax = float(np.max(bins))
+    vmin = float(np.min(bins))
+    return med, vmax, vmin
+
+
+def _waste_bins_summary(util: pd.DataFrame, storage: pd.DataFrame, year_sel: int) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    u = util.copy() if isinstance(util, pd.DataFrame) else pd.DataFrame()
+    s = storage.copy() if isinstance(storage, pd.DataFrame) else pd.DataFrame()
+
+    if not u.empty and "season_year" in u.columns:
+        u["season_year"] = pd.to_numeric(u["season_year"], errors="coerce")
+        u = u[u["season_year"] == float(year_sel)].copy()
+    else:
+        u = pd.DataFrame()
+
+    if not s.empty and "season_year" in s.columns:
+        s["season_year"] = pd.to_numeric(s["season_year"], errors="coerce")
+        s = s[s["season_year"] == float(year_sel)].copy()
+    else:
+        s = pd.DataFrame()
+
+    harvest_col = None
+    for c in ["waste_bins_removed_total", "waste_bins_removed", "waste_bins_short_term"]:
+        if (not u.empty) and (c in u.columns):
+            harvest_col = c
             break
-    if T is None:
-        return None
+    storage_col = "total_waste_bins" if ((not s.empty) and ("total_waste_bins" in s.columns)) else None
 
-    x = _x_axis(T)
-    fig = go.Figure()
-    for g in GRADES:
-        a = _to_1d_float_array(fr.get(g, []))
-        if a is None or a.size == 0:
-            continue
-        fig.add_trace(go.Scatter(
-            x=x, y=np.asarray(a, dtype=float) * 100.0,
-            mode="lines", name=g,
-            line=dict(color=GRADE_COLORS.get(g, None), width=3),
-            line_shape="hv",
-        ))
-    fig.update_layout(
-        title=dict(text="Weekly fill rate", x=0.0, xanchor="left"),
-        xaxis_title="Week",
-        yaxis_title="Fill rate (%)",
-        height=500,
-        hovermode="x unified",
-        margin=dict(l=52, r=90, t=42, b=32),
-        legend=dict(x=1.01, xanchor="left", y=1.0, yanchor="top"),
-    )
-    fig.update_yaxes(range=[0, 100])
-    return fig
+    if harvest_col is None and storage_col is None:
+        return None, None, None
+
+    totals = None
+    run_id_candidates = ["run_id", "mc_run", "rep", "trial", "sim", "seed", "iteration"]
+    shared_id = None
+    for c in run_id_candidates:
+        if (not u.empty) and (not s.empty) and (c in u.columns) and (c in s.columns):
+            shared_id = c
+            break
+
+    if shared_id is not None:
+        uu = u[[shared_id, harvest_col]].copy() if harvest_col else u[[shared_id]].copy()
+        ss = s[[shared_id, storage_col]].copy() if storage_col else s[[shared_id]].copy()
+        if harvest_col:
+            uu[harvest_col] = pd.to_numeric(uu[harvest_col], errors="coerce").fillna(0.0)
+        if storage_col:
+            ss[storage_col] = pd.to_numeric(ss[storage_col], errors="coerce").fillna(0.0)
+        m = uu.merge(ss, on=shared_id, how="outer").fillna(0.0)
+        hw = m[harvest_col].to_numpy(dtype=float) if harvest_col else 0.0
+        sw = m[storage_col].to_numpy(dtype=float) if storage_col else 0.0
+        totals = np.asarray(hw, dtype=float) + np.asarray(sw, dtype=float)
+    else:
+        arrs = []
+        if harvest_col is not None and not u.empty:
+            arrs.append(pd.to_numeric(u[harvest_col], errors="coerce").fillna(0.0).to_numpy(dtype=float))
+        if storage_col is not None and not s.empty:
+            arrs.append(pd.to_numeric(s[storage_col], errors="coerce").fillna(0.0).to_numpy(dtype=float))
+        if arrs:
+            max_len = max(len(a) for a in arrs)
+            padded = []
+            for a in arrs:
+                b = np.zeros(max_len, dtype=float)
+                b[:len(a)] = a
+                padded.append(b)
+            totals = np.sum(np.vstack(padded), axis=0)
+
+    if totals is None or len(totals) == 0:
+        return None, None, None
+
+    totals = totals[np.isfinite(totals)]
+    if totals.size == 0:
+        return None, None, None
+
+    med = float(np.median(totals))
+    vmax = float(np.max(totals))
+    vmin = float(np.min(totals))
+    return med, vmax, vmin
+
+
+def _fill_rate_summary(storage: pd.DataFrame, year_sel: int) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    if storage.empty or "season_year" not in storage.columns or "fill_rate_overall" not in storage.columns:
+        return None, None, None
+    s = storage.copy()
+    s["season_year"] = pd.to_numeric(s["season_year"], errors="coerce")
+    s = s[s["season_year"] == float(year_sel)]
+    vals = pd.to_numeric(s["fill_rate_overall"], errors="coerce").dropna()
+    if vals.empty:
+        return None, None, None
+    med = float(np.clip(vals.median(), 0.0, 1.0) * 100.0)
+    vmax = float(np.clip(vals.max(), 0.0, 1.0) * 100.0)
+    vmin = float(np.clip(vals.min(), 0.0, 1.0) * 100.0)
+    return med, vmax, vmin
+
+
+def _revenue_summary(storage: pd.DataFrame, year_sel: int) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    if storage.empty or "season_year" not in storage.columns:
+        return None, None, None
+    s = storage.copy()
+    s["season_year"] = pd.to_numeric(s["season_year"], errors="coerce")
+    s = s[s["season_year"] == float(year_sel)].copy()
+    if s.empty:
+        return None, None, None
+
+    vals = []
+    price = {"Extra": 100.0, "Class1": 75.0, "Class2": 60.0, "Processor": 40.0, "Waste": -5.0}
+
+    for _, r in s.iterrows():
+        row = r.to_dict()
+        fulfilled = row.get("fulfilled_by_week", None)
+        waste_bins = float(row.get("total_waste_bins", 0.0) or 0.0)
+        revenue = 0.0
+        if isinstance(fulfilled, dict):
+            for g in GRADES:
+                arr = _to_1d_float_array(fulfilled.get(g, []))
+                total = float(np.nansum(np.maximum(0.0, arr))) if arr is not None else 0.0
+                revenue += total * price[g]
+        revenue += waste_bins * price["Waste"]
+        if np.isfinite(revenue):
+            vals.append(float(revenue))
+
+    if not vals:
+        return None, None, None
+
+    a = np.asarray(vals, dtype=float)
+    med = float(np.median(a))
+    vmax = float(np.max(a))
+    vmin = float(np.min(a))
+    return med, vmax, vmin
 
 
 def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> None:
@@ -1543,6 +1277,7 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
     util = _robust_util_df(sim_results)
     storage = _robust_storage_df_any(sim_results)
     storage_row_med = _median_detail_storage_row(sim_results, year_sel)
+    storage_row_unc = _uncertainty_storage_row(sim_results, year_sel)
 
     initial_bins_med = _median_initial_bins(util, int(year_sel))
     waste_total_all = _waste_total_all_sources(util=util, storage=storage, year_sel=int(year_sel))
@@ -1554,9 +1289,9 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
     row1_h = 350
     pie_h = 245
     bar_h = 245
-    weekly_h = 275
+    weekly_h = 300
 
-    c1, c2, c3 = st.columns([1.05, 1.05, 1.10], vertical_alignment="top")
+    c1, c2, c3 = st.columns([1.0, 1.0, 1.2], vertical_alignment="top")
 
     with c1:
         fig_y = _yield_dist_fig(mc, year_sel, height=row1_h)
@@ -1571,7 +1306,7 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
             )
 
     with c2:
-        fig_q0 = _starting_quality_fig(storage_row_med)
+        fig_q0 = _starting_quality_fig(storage_row_med, storage_row_unc)
         if fig_q0 is None:
             st.info("Starting quality distribution unavailable.")
         else:
@@ -1584,37 +1319,65 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
             )
 
     with c3:
-        y_med = None
-        if not mc.empty and "season_year" in mc.columns and "yield_t_ha" in mc.columns:
-            dfy = mc[mc["season_year"] == int(year_sel)].copy()
-            yv = pd.to_numeric(dfy["yield_t_ha"], errors="coerce").dropna()
-            if not yv.empty:
-                y_med = float(yv.median())
+        orchard_area = float(config.get("orchard_area", 1.0))
+        kg_per_bin = float(config.get("kg_per_bin", 350.0))
 
-        fill_rate_med = None
-        if not storage.empty and "season_year" in storage.columns and "fill_rate_overall" in storage.columns:
-            s = storage.copy()
-            s["season_year"] = pd.to_numeric(s["season_year"], errors="coerce")
-            s = s[s["season_year"] == float(year_sel)]
-            fr = pd.to_numeric(s["fill_rate_overall"], errors="coerce").dropna()
-            if not fr.empty:
-                fill_rate_med = float(np.clip(fr.median(), 0.0, 1.0) * 100.0)
+        avail_med, avail_max, avail_min = _available_bins_from_growth_summary(
+            mc=mc,
+            year_sel=year_sel,
+            orchard_area=orchard_area,
+            kg_per_bin=kg_per_bin,
+        )
+        waste_med, waste_max, waste_min = _waste_bins_summary(util, storage, year_sel)
+        fill_med, fill_max, fill_min = _fill_rate_summary(storage, year_sel)
+        rev_med, rev_max, rev_min = _revenue_summary(storage, year_sel)
 
-        waste_bins_all = float(waste_total_all) if (waste_total_all is not None and np.isfinite(waste_total_all)) else None
-        revenue_est = _estimated_revenue(storage_row_med, waste_total_all=waste_total_all)
+        m1, m2 = st.columns(2, vertical_alignment="top")
+        m3, m4 = st.columns(2, vertical_alignment="top")
 
-        r1a, r1b = st.columns(2)
-        r2a, r2b = st.columns(2)
+        with m1:
+            st.markdown(
+                _metric_triplet_html(
+                    "Available bins to harvest",
+                    _fmt_value(avail_med, decimals=0),
+                    _fmt_delta_signed(None if (avail_med is None or avail_max is None) else avail_max - avail_med, decimals=0),
+                    _fmt_delta_signed(None if (avail_med is None or avail_min is None) else avail_min - avail_med, decimals=0),
+                ),
+                unsafe_allow_html=True,
+            )
 
-        with r1a:
-            st.metric("Median yield (t/ha)", "—" if y_med is None else f"{y_med:.2f}")
-        with r1b:
-            st.metric("Fill rate (%)", "—" if fill_rate_med is None else f"{fill_rate_med:.0f}%")
+        with m2:
+            st.markdown(
+                _metric_triplet_html(
+                    "Waste bins",
+                    _fmt_value(waste_med, decimals=0),
+                    _fmt_delta_signed(None if (waste_med is None or waste_max is None) else waste_max - waste_med, decimals=0),
+                    _fmt_delta_signed(None if (waste_med is None or waste_min is None) else waste_min - waste_med, decimals=0),
+                ),
+                unsafe_allow_html=True,
+            )
 
-        with r2a:
-            st.metric("Waste bins", "—" if waste_bins_all is None else f"{waste_bins_all:.0f}")
-        with r2b:
-            st.metric("Estimated revenue", "—" if revenue_est is None else f"£{revenue_est:,.0f}")
+        with m3:
+            st.markdown(
+                _metric_triplet_html(
+                    "Fill rate (%)",
+                    _fmt_value(fill_med, suffix="%", decimals=0),
+                    _fmt_delta_signed(None if (fill_med is None or fill_max is None) else fill_max - fill_med, suffix="%", decimals=0),
+                    _fmt_delta_signed(None if (fill_med is None or fill_min is None) else fill_min - fill_med, suffix="%", decimals=0),
+                ),
+                unsafe_allow_html=True,
+            )
+
+        with m4:
+            st.markdown(
+                _metric_triplet_html(
+                    "Estimated revenue",
+                    _fmt_value(rev_med, prefix="£", decimals=0),
+                    _fmt_delta_signed(None if (rev_med is None or rev_max is None) else rev_max - rev_med, prefix="£", decimals=0),
+                    _fmt_delta_signed(None if (rev_med is None or rev_min is None) else rev_min - rev_med, prefix="£", decimals=0),
+                ),
+                unsafe_allow_html=True,
+            )
 
         fig_hm = _util_heatmap_selected_year_horizontal(util, year_sel)
         if fig_hm is None:
@@ -1630,7 +1393,7 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
     st.markdown("<div style='margin-top:-700px;'></div>", unsafe_allow_html=True)
     st.divider()
 
-    b1, b2, b3 = st.columns(3, vertical_alignment="top")
+    b1, b2, b3 = st.columns([1.0, 1.0, 1.25], vertical_alignment="top")
 
     with b1:
         fig_pie = _storage_grade_mix_pie(storage_row_med, config)
@@ -1659,7 +1422,7 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
             )
 
     with b3:
-        fig_fr = _fillrate_weekly_plot(storage_row_med)
+        fig_fr = _overview_fillrate_weekly_plot(storage_row_med, storage_row_unc)
         if fig_fr is None:
             st.info("Weekly fill-rate plot unavailable.")
         else:
@@ -1670,10 +1433,6 @@ def render_overview_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> 
                 config={"displayModeBar": False},
                 key=f"ov_fillrate_weekly_{year_sel}",
             )
-
-
-
-
 
 
 
@@ -2487,7 +2246,7 @@ def render_harvest_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> N
     # Bin flow spaghetti — TRUE date axis + correct backfill + correct end
     # --------------------------------------------------------
     st.divider()
-    st.markdown("### Bin flow spaghetti")
+    st.markdown("### Bin flow spaghetti Plots")
 
     M_trees, x_dates = _extract_series_matrix_for_year_cached(
         dfy, "trees_series", cap=cap, window_start=window_start, window_end=window_end
@@ -2542,6 +2301,41 @@ def render_harvest_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> N
                             key=f"harvest_spag_sts_{year_sel}")
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -2555,34 +2349,27 @@ import streamlit as st
 
 
 # ============================================================
-# Storage & distribution tab (POST-PROCESSING) — UPDATED DATA FEED ONLY
+# Storage & distribution tab
 #
-# ✅ NO visuals added/removed:
-#   - Year slider: kept
-#   - Week slider: kept
-#   - Demand cycle plot: kept
-#   - Weekly fill-rate plot: kept
-#   - Quality histogram + min/max whiskers: kept
-#   - Any other existing visuals in your original render_storage_tab should remain
+# UPDATED:
+#   ✅ prefers TRUE storage uncertainty from:
+#        sim_results["storage_uncertainty_by_year"]
+#      which is aggregated from ALL storage MC runs
 #
-# ✅ Data fixes (feeds the SAME visuals):
-#   1) "Bins flowing into inventory":
-#      If weekly inflow is available from harvest outputs, we compute a corrected
-#      start-of-week inventory series so bins don’t all appear at week 0.
+#   ✅ fallback still supports old min/median/max detail-run structure
 #
-#      Example behaviour:
-#        inflow[0]=100, inflow[1]=100
-#        inv_week0 = 0
-#        inv_week1 = 100 - orders_week0
-#        inv_week2 = 200 - orders_week0 - orders_week1
+#   ✅ weekly fill-rate uncertainty shown correctly:
+#        - shaded ONLY between min↔median
+#        - shaded ONLY between median↔max
 #
-#   2) Min/Median/Max alignment for inventory whiskers across weeks:
-#      Min/max arrays are taken from the SAME week index as the median bars.
+#   ✅ adds bottom plot:
+#        cumulative Cost (black line)
+#        vs cumulative Revenue (blue line + shaded min/max bands)
 # ============================================================
 
 
 # ============================================================
-# Storage tab helpers (UNCHANGED)
+# Storage tab helpers
 # ============================================================
 
 def _robust_storage_df(sim_results: Dict[str, Any]) -> pd.DataFrame:
@@ -2597,10 +2384,16 @@ def _robust_storage_df(sim_results: Dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def _robust_storage_uncertainty_df(sim_results: Dict[str, Any]) -> pd.DataFrame:
+    df = _get_df(sim_results, "storage_uncertainty_by_year")
+    if not df.empty:
+        return df
+    return pd.DataFrame()
+
+
 def _robust_storage_detail_runs(sim_results: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
     """
-    Returns dict of detail-run storage_by_year DataFrames for envelope plotting.
-    Expected (any of these will work):
+    Fallback structure for older outputs:
       - sim_results['storage_detail_runs'] = {'min': df, 'median': df, 'max': df}
       - sim_results['min_detail']['des_out']['storage_by_year'], etc.
       - fallback: only median_detail['des_out']['storage_by_year']
@@ -2673,13 +2466,6 @@ def _get_year_start_date_for_storage(sim_results: Dict[str, Any], year_sel: int)
 
 
 def _week_tickvals_ticktext(T: int, start_date: Optional[pd.Timestamp]) -> Tuple[List[int], List[str]]:
-    """
-    Exactly 7 x-axis segments (same as demand cycle plot):
-      - tickvals are week indices
-      - ticktext shows:
-          week_index
-          MMM-DD underneath
-    """
     if T <= 0:
         return [], []
     raw = np.linspace(0, T - 1, 7)
@@ -2698,7 +2484,6 @@ def _week_tickvals_ticktext(T: int, start_date: Optional[pd.Timestamp]) -> Tuple
     return tickvals, ticktext
 
 
-# Use the SAME bands your storage module uses (Storage_Distribution_module.py)
 _STORAGE_GRADE_Q_BANDS = {
     "Extra": (0.90, 1.00),
     "Class1": (0.70, 0.90),
@@ -2718,10 +2503,7 @@ def _storage_band_mask(centers: np.ndarray, grade: str) -> np.ndarray:
 
 
 # ============================================================
-# EXISTING VISUAL FUNCTIONS (UNCHANGED)
-#   - whisker histogram
-#   - weekly fill-rate plot helper
-#   - any other plot helpers you already had
+# Existing plot helpers
 # ============================================================
 
 def _colored_gradeband_hist_with_whiskers(
@@ -2732,13 +2514,6 @@ def _colored_gradeband_hist_with_whiskers(
     *,
     legend_side: str = "right",
 ) -> go.Figure:
-    """
-    Coloured bars (median).
-    For each bar (quality bin), draw a white 'whisker' indicator:
-      - median is the bar height
-      - horizontal white tick at min and max
-      - vertical white line connecting min..max
-    """
     h_med = np.asarray(inv_med, dtype=float)
     h_med[~np.isfinite(h_med)] = 0.0
     h_med = np.maximum(0.0, h_med)
@@ -2803,19 +2578,19 @@ def _colored_gradeband_hist_with_whiskers(
                     type="line",
                     x0=float(x0), x1=float(x0),
                     y0=float(y_lo), y1=float(y_hi),
-                    line=dict(color="white", width=2),
+                    line=dict(color="grey", width=2),
                 )
                 fig.add_shape(
                     type="line",
                     x0=float(x0 - dx), x1=float(x0 + dx),
                     y0=float(y_hi), y1=float(y_hi),
-                    line=dict(color="white", width=2),
+                    line=dict(color="grey", width=2),
                 )
                 fig.add_shape(
                     type="line",
                     x0=float(x0 - dx), x1=float(x0 + dx),
                     y0=float(y_lo), y1=float(y_lo),
-                    line=dict(color="white", width=2),
+                    line=dict(color="grey", width=2),
                 )
 
             ymax = max(ymax, float(np.nanmax(hi)) * 1.10 if hi.size else ymax)
@@ -2831,7 +2606,7 @@ def _colored_gradeband_hist_with_whiskers(
         title=title,
         barmode="overlay",
         xaxis_title="Quality (0–1)",
-        yaxis_title="Bins (median)",
+        yaxis_title="Bins (median + uncertainty bands)",
         height=520,
         margin=dict(l=55, r=120 if legend_side == "right" else 20, t=65, b=55),
         hovermode="x unified",
@@ -2854,38 +2629,122 @@ def _fillrate_weekly_median_min_max_plot(
     title: str,
     height: int = 420,
 ) -> go.Figure:
+    """
+    Weekly fill-rate plot with:
+      - solid median line
+      - dotted min/max lines
+      - shaded ONLY between min↔median and median↔max
+      - step-shaped traces so the filled regions look like weekly boxes
+    """
     x = _x_axis(T)
     fig = go.Figure()
 
+    def _rgba_from_hex(hex_color: str, alpha: float) -> str:
+        c = str(hex_color or "#888888").lstrip("#")
+        if len(c) != 6:
+            return f"rgba(136,136,136,{alpha})"
+        r = int(c[0:2], 16)
+        g = int(c[2:4], 16)
+        b = int(c[4:6], 16)
+        return f"rgba({r},{g},{b},{alpha})"
+
     for g in GRADES:
-        y_med = np.asarray(fr_med.get(g, np.zeros(T, dtype=float)), dtype=float) * 100.0
+        base_color = GRADE_COLORS.get(g, "#888888")
+
+        y_med = np.asarray(fr_med.get(g, np.zeros(T, dtype=float)), dtype=float)
+        if y_med.size != T:
+            tmp = np.zeros(T, dtype=float)
+            n = min(T, int(y_med.size))
+            if n > 0:
+                tmp[:n] = y_med[:n]
+            y_med = tmp
+        y_med = np.clip(y_med, 0.0, 1.0) * 100.0
+
+        y_min = None
+        if fr_min is not None and g in fr_min:
+            arr = np.asarray(fr_min[g], dtype=float)
+            if arr.size != T:
+                tmp = np.zeros(T, dtype=float)
+                n = min(T, int(arr.size))
+                if n > 0:
+                    tmp[:n] = arr[:n]
+                arr = tmp
+            y_min = np.clip(arr, 0.0, 1.0) * 100.0
+
+        y_max = None
+        if fr_max is not None and g in fr_max:
+            arr = np.asarray(fr_max[g], dtype=float)
+            if arr.size != T:
+                tmp = np.zeros(T, dtype=float)
+                n = min(T, int(arr.size))
+                if n > 0:
+                    tmp[:n] = arr[:n]
+                arr = tmp
+            y_max = np.clip(arr, 0.0, 1.0) * 100.0
+
+        # Lower band: min -> median
+        if y_min is not None:
+            fig.add_trace(go.Scatter(
+                x=x,
+                y=y_min,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo="skip",
+                line_shape="hv",
+            ))
+            fig.add_trace(go.Scatter(
+                x=x,
+                y=y_med,
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor=_rgba_from_hex(base_color, 0.10),
+                showlegend=False,
+                hoverinfo="skip",
+                line_shape="hv",
+            ))
+
+        # Upper band: median -> max
+        if y_max is not None:
+            fig.add_trace(go.Scatter(
+                x=x,
+                y=y_max,
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor=_rgba_from_hex(base_color, 0.16),
+                showlegend=False,
+                hoverinfo="skip",
+                line_shape="hv",
+            ))
+
+        # Median line
         fig.add_trace(go.Scatter(
             x=x, y=y_med,
             mode="lines",
             name=f"{g} (median)",
-            line=dict(color=GRADE_COLORS.get(g, None), width=3),
+            line=dict(color=base_color, width=3),
             line_shape="hv",
         ))
 
-        if fr_min is not None and g in fr_min:
-            y_min = np.asarray(fr_min[g], dtype=float)
-            y_min = (np.clip(y_min, 0.0, 1.0) * 100.0) if y_min.size == T else (np.zeros(T) * 100.0)
+        # Min line
+        if y_min is not None:
             fig.add_trace(go.Scatter(
                 x=x, y=y_min,
                 mode="lines",
                 name=f"{g} (min)",
-                line=dict(color=GRADE_COLORS.get(g, None), width=2, dash="dot"),
+                line=dict(color=base_color, width=2, dash="dot"),
                 line_shape="hv",
             ))
 
-        if fr_max is not None and g in fr_max:
-            y_max = np.asarray(fr_max[g], dtype=float)
-            y_max = (np.clip(y_max, 0.0, 1.0) * 100.0) if y_max.size == T else (np.zeros(T) * 100.0)
+        # Max line
+        if y_max is not None:
             fig.add_trace(go.Scatter(
                 x=x, y=y_max,
                 mode="lines",
                 name=f"{g} (max)",
-                line=dict(color=GRADE_COLORS.get(g, None), width=2, dash="dot"),
+                line=dict(color=base_color, width=2, dash="dot"),
                 line_shape="hv",
             ))
 
@@ -2907,7 +2766,7 @@ def _fillrate_weekly_median_min_max_plot(
 
 
 # ============================================================
-# UPDATED DATA FEED HELPERS (new logic, NO new visuals)
+# Data helpers
 # ============================================================
 
 def _row_for_year(df: pd.DataFrame, year_sel: int) -> Optional[Dict[str, Any]]:
@@ -2933,144 +2792,8 @@ def _safe_np_2d(x: Any) -> Optional[np.ndarray]:
     if a.ndim != 2 or a.size == 0:
         return None
     a[~np.isfinite(a)] = 0.0
-    a = np.maximum(0.0, a)
+    a = np.maximum(a, 0.0)
     return a
-
-
-def _safe_weekly_dict_to_np(d: Any, weeks: int) -> Optional[Dict[str, np.ndarray]]:
-    if not isinstance(d, dict):
-        return None
-    out: Dict[str, np.ndarray] = {}
-    ok = False
-    for g in ALL_GRADES:
-        a = _to_1d_float_array(d.get(g, []))
-        if a is None:
-            continue
-        arr = np.asarray(a, dtype=float)
-        tmp = np.zeros(int(weeks), dtype=float)
-        n = min(int(weeks), int(arr.size))
-        if n > 0:
-            tmp[:n] = np.maximum(0.0, arr[:n])
-        out[g] = tmp
-        ok = True
-    return out if ok else None
-
-
-def _extract_weekly_inflow_by_grade(sim_results: Dict[str, Any], year_sel: int, weeks: int) -> Optional[Dict[str, np.ndarray]]:
-    """
-    Pull weekly inflow into cold-store from harvest/grading outputs (best-effort).
-    Returns dict: {grade: np.array(weeks)} for saleable GRADES.
-    """
-    # 1) preferred: harvest_year_out dict stored in median_detail
-    hyo = _get_nested(sim_results, ["median_detail", "des_out", "harvest_year_out"])
-    if isinstance(hyo, dict):
-        cbyw = hyo.get("cold_inflow_by_week", None)
-        if isinstance(cbyw, dict):
-            out: Dict[str, np.ndarray] = {}
-            ok = False
-            for g in GRADES:
-                a = cbyw.get(g, None)
-                if isinstance(a, (list, np.ndarray)):
-                    arr = np.asarray(a, dtype=float)
-                    tmp = np.zeros(int(weeks), dtype=float)
-                    n = min(int(weeks), int(arr.size))
-                    if n > 0:
-                        tmp[:n] = np.maximum(0.0, arr[:n])
-                    out[g] = tmp
-                    ok = True
-            return out if ok else None
-
-    # 2) harvest_yearly row dict
-    hy = _get_nested(sim_results, ["median_detail", "des_out", "harvest_yearly"])
-    if isinstance(hy, pd.DataFrame) and (not hy.empty) and ("season_year" in hy.columns):
-        u = hy.copy()
-        u["season_year"] = pd.to_numeric(u["season_year"], errors="coerce").astype("Int64")
-        u = u.dropna(subset=["season_year"]).copy()
-        u["season_year"] = u["season_year"].astype(int)
-        r = u[u["season_year"] == int(year_sel)]
-        if not r.empty:
-            row = r.iloc[0].to_dict()
-
-            cbyw = row.get("cold_inflow_by_week", None)
-            if isinstance(cbyw, dict):
-                out: Dict[str, np.ndarray] = {}
-                ok = False
-                for g in GRADES:
-                    a = cbyw.get(g, None)
-                    if isinstance(a, (list, np.ndarray)):
-                        arr = np.asarray(a, dtype=float)
-                        tmp = np.zeros(int(weeks), dtype=float)
-                        n = min(int(weeks), int(arr.size))
-                        if n > 0:
-                            tmp[:n] = np.maximum(0.0, arr[:n])
-                        out[g] = tmp
-                        ok = True
-                return out if ok else None
-
-            # per-grade list columns
-            out: Dict[str, np.ndarray] = {}
-            ok = False
-            for g in GRADES:
-                col = f"cold_inflow_{g}"
-                if col in r.columns:
-                    a = r.iloc[0][col]
-                    if isinstance(a, (list, np.ndarray)):
-                        arr = np.asarray(a, dtype=float)
-                        tmp = np.zeros(int(weeks), dtype=float)
-                        n = min(int(weeks), int(arr.size))
-                        if n > 0:
-                            tmp[:n] = np.maximum(0.0, arr[:n])
-                        out[g] = tmp
-                        ok = True
-            return out if ok else None
-
-    return None
-
-
-def _compute_flow_inventory_by_week(
-    inflow_by_week: Dict[str, np.ndarray],
-    fulfilled_by_week: Optional[Dict[str, np.ndarray]],
-    *,
-    weeks: int,
-) -> Dict[str, np.ndarray]:
-    """
-    Start-of-week inventory with flow timing (matches your example):
-
-      inv[w] = sum_{k=0..w-1} inflow[k]  -  sum_{k=0..w-1} fulfilled[k]
-
-    so:
-      inv[0] = 0
-      inv[1] = inflow[0] - fulfilled[0]
-      inv[2] = inflow[0]+inflow[1] - fulfilled[0]-fulfilled[1]
-    """
-    out: Dict[str, np.ndarray] = {g: np.zeros(int(weeks), dtype=float) for g in GRADES}
-
-    ful = fulfilled_by_week or {g: np.zeros(int(weeks), dtype=float) for g in GRADES}
-
-    for g in GRADES:
-        infl = np.asarray(inflow_by_week.get(g, np.zeros(int(weeks))), dtype=float)
-        if infl.size != int(weeks):
-            tmp = np.zeros(int(weeks), dtype=float)
-            n = min(int(weeks), int(infl.size))
-            if n > 0:
-                tmp[:n] = np.maximum(0.0, infl[:n])
-            infl = tmp
-
-        f = np.asarray(ful.get(g, np.zeros(int(weeks))), dtype=float)
-        if f.size != int(weeks):
-            tmp = np.zeros(int(weeks), dtype=float)
-            n = min(int(weeks), int(f.size))
-            if n > 0:
-                tmp[:n] = np.maximum(0.0, f[:n])
-            f = tmp
-
-        infl_cum_prev = np.concatenate([[0.0], np.cumsum(np.maximum(0.0, infl))[:-1]])
-        ful_cum_prev = np.concatenate([[0.0], np.cumsum(np.maximum(0.0, f))[:-1]])
-        inv = np.maximum(0.0, infl_cum_prev - ful_cum_prev)
-
-        out[g] = inv
-
-    return out
 
 
 def _dict_grades_weeks_from_row(row: Dict[str, Any], key: str, weeks: int, grades: List[str]) -> Optional[Dict[str, np.ndarray]]:
@@ -3102,11 +2825,6 @@ def _demand_cycle_plot(
     title: str = "Demand cycle",
     height: int = 320,
 ) -> go.Figure:
-    """
-    This is the same "demand cycle plot" concept: weekly demand by grade.
-    If your original plot looked different, keep your original plot function and
-    just feed it the same demand_by_week arrays produced below.
-    """
     x = _x_axis(int(weeks))
     fig = go.Figure()
     for g in GRADES:
@@ -3132,8 +2850,191 @@ def _demand_cycle_plot(
     return fig
 
 
+def _storage_revenue_from_row(row: Dict[str, Any]) -> float:
+    """
+    Revenue from one storage row.
+    Uses:
+      Extra     = £100/bin
+      Class1    = £75/bin
+      Class2    = £60/bin
+      Processor = £40/bin
+      Waste     = -£5/bin
+    """
+    price = {
+        "Extra": 100.0,
+        "Class1": 75.0,
+        "Class2": 60.0,
+        "Processor": 40.0,
+        "Waste": -5.0,
+    }
+
+    fulfilled = row.get("fulfilled_by_week", None)
+    waste_bins = float(row.get("total_waste_bins", 0.0) or 0.0)
+
+    revenue = 0.0
+    if isinstance(fulfilled, dict):
+        for g in GRADES:
+            arr = _to_1d_float_array(fulfilled.get(g, []))
+            total = float(np.nansum(np.maximum(0.0, arr))) if arr is not None else 0.0
+            revenue += total * price[g]
+
+    revenue += waste_bins * price["Waste"]
+    return float(revenue)
+
+
+def _build_cost_revenue_by_year(
+    config: Dict[str, Any],
+    sim_results: Dict[str, Any],
+) -> pd.DataFrame:
+    """
+    Returns per-year and cumulative:
+      - cost_year
+      - revenue_min_year / revenue_median_year / revenue_max_year
+      - cost_cum
+      - revenue_min_cum / revenue_median_cum / revenue_max_cum
+    """
+    storage_df = _robust_storage_df(sim_results)
+    if storage_df.empty or "season_year" not in storage_df.columns:
+        return pd.DataFrame()
+
+    df = storage_df.copy()
+    df["season_year"] = pd.to_numeric(df["season_year"], errors="coerce")
+    df = df.dropna(subset=["season_year"]).copy()
+    df["season_year"] = df["season_year"].astype(int)
+
+    # Revenue per MC run
+    df["revenue_calc"] = df.apply(lambda r: _storage_revenue_from_row(r.to_dict()), axis=1)
+
+    rev = (
+        df.groupby("season_year")["revenue_calc"]
+        .agg(
+            revenue_min_year="min",
+            revenue_median_year="median",
+            revenue_max_year="max",
+        )
+        .reset_index()
+        .sort_values("season_year")
+        .reset_index(drop=True)
+    )
+
+    # Cost model
+    tree_density = float(config.get("tree_density", 1500))
+    orchard_area = float(config.get("orchard_area", 1.0))
+    planting_year = int(config.get("planting_year", int(rev["season_year"].min()) if not rev.empty else 0))
+
+    n_trees = float(tree_density * orchard_area)
+
+    initial_per_tree = 30.0
+    annual_maintenance_per_tree = 10
+
+    cost_year = []
+    for y in rev["season_year"].tolist():
+        c = n_trees * annual_maintenance_per_tree
+        if int(y) == int(planting_year):
+            c += n_trees * initial_per_tree
+        cost_year.append(float(c))
+
+    rev["cost_year"] = cost_year
+
+    # Cumulative
+    rev["cost_cum"] = rev["cost_year"].cumsum()
+    rev["revenue_min_cum"] = rev["revenue_min_year"].cumsum()
+    rev["revenue_median_cum"] = rev["revenue_median_year"].cumsum()
+    rev["revenue_max_cum"] = rev["revenue_max_year"].cumsum()
+
+    return rev
+
+
+def _cost_vs_revenue_plot(df: pd.DataFrame) -> Optional[go.Figure]:
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return None
+
+    years = pd.to_numeric(df["season_year"], errors="coerce").to_numpy(dtype=float)
+    cost = pd.to_numeric(df["cost_cum"], errors="coerce").to_numpy(dtype=float)
+    rev_min = pd.to_numeric(df["revenue_min_cum"], errors="coerce").to_numpy(dtype=float)
+    rev_med = pd.to_numeric(df["revenue_median_cum"], errors="coerce").to_numpy(dtype=float)
+    rev_max = pd.to_numeric(df["revenue_max_cum"], errors="coerce").to_numpy(dtype=float)
+
+    mask = np.isfinite(years) & np.isfinite(cost) & np.isfinite(rev_med)
+    if not np.any(mask):
+        return None
+
+    years = years[mask]
+    cost = cost[mask]
+    rev_min = rev_min[mask]
+    rev_med = rev_med[mask]
+    rev_max = rev_max[mask]
+
+    fig = go.Figure()
+
+    # Lower band: min -> median
+    fig.add_trace(go.Scatter(
+        x=years,
+        y=rev_min,
+        mode="lines",
+        line=dict(width=0),
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+    fig.add_trace(go.Scatter(
+        x=years,
+        y=rev_med,
+        mode="lines",
+        line=dict(width=0),
+        fill="tonexty",
+        fillcolor="rgba(255,0,0,0.14)",
+        name="Revenue min→median",
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    # Upper band: median -> max
+    fig.add_trace(go.Scatter(
+        x=years,
+        y=rev_max,
+        mode="lines",
+        line=dict(width=0),
+        fill="tonexty",
+        fillcolor="rgba(0,180,0,0.14)",
+        name="Revenue median→max",
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    # Median revenue
+    fig.add_trace(go.Scatter(
+        x=years,
+        y=rev_med,
+        mode="lines+markers",
+        name="Revenue (median, cumulative)",
+        line=dict(color="blue", width=3),
+        marker=dict(color="blue"),
+    ))
+
+    # Cumulative cost
+    fig.add_trace(go.Scatter(
+        x=years,
+        y=cost,
+        mode="lines+markers",
+        name="Cost (cumulative)",
+        line=dict(color="black", width=3),
+        marker=dict(color="black"),
+    ))
+
+    fig.update_layout(
+        title="Cumulative cost vs revenue",
+        xaxis_title="Season year",
+        yaxis_title="£",
+        height=380,
+        hovermode="x unified",
+        margin=dict(l=55, r=20, t=55, b=55),
+        legend=dict(x=1.01, xanchor="left", y=1.0, yanchor="top"),
+    )
+    return fig
+
+
 # ============================================================
-# render_storage_tab (KEEP SAME VISUALS; update data feeding)
+# Storage tab renderer
 # ============================================================
 
 def render_storage_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> None:
@@ -3149,100 +3050,124 @@ def render_storage_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> N
         st.info("Storage results unavailable (no years found).")
         return
 
-    # ✅ (kept) Year slider
     year_sel = int(st.slider("Year", int(years[0]), int(years[-1]), int(years[-1]), 1, key="storage_year_slider"))
 
-    detail = _robust_storage_detail_runs(sim_results)
-    row_med = _row_for_year(detail.get("median", pd.DataFrame()), year_sel)
-    row_min = _row_for_year(detail.get("min", pd.DataFrame()), year_sel) if "min" in detail else None
-    row_max = _row_for_year(detail.get("max", pd.DataFrame()), year_sel) if "max" in detail else None
+    # --------------------------------------------------------
+    # Preferred source: true storage uncertainty aggregated from ALL MC runs
+    # --------------------------------------------------------
+    storage_unc_df = _robust_storage_uncertainty_df(sim_results)
+    unc_row = _row_for_year(storage_unc_df, year_sel) if not storage_unc_df.empty else None
 
-    if not isinstance(row_med, dict):
+    # --------------------------------------------------------
+    # Fallback source: old min / median / max selected runs
+    # --------------------------------------------------------
+    detail = _robust_storage_detail_runs(sim_results)
+    row_med_fallback = _row_for_year(detail.get("median", pd.DataFrame()), year_sel)
+    row_min_fallback = _row_for_year(detail.get("min", pd.DataFrame()), year_sel) if "min" in detail else None
+    row_max_fallback = _row_for_year(detail.get("max", pd.DataFrame()), year_sel) if "max" in detail else None
+
+    row_base = unc_row if isinstance(unc_row, dict) else row_med_fallback
+    if not isinstance(row_base, dict):
         st.info("Storage detail data unavailable for selected year.")
         return
 
-    weeks = int(row_med.get("weeks", 52) or 52)
+    weeks = int(row_base.get("weeks", 52) or 52)
     weeks = max(1, min(weeks, 200))
 
     start_date = _get_year_start_date_for_storage(sim_results, year_sel)
     tickvals, ticktext = _week_tickvals_ticktext(weeks, start_date)
 
-    # ✅ (kept) Week slider
-    # (Your original UI used this to select which weekly histogram to show.)
     week_sel = int(st.slider("Week", 0, max(0, weeks - 1), 0, 1, key="storage_week_slider"))
 
-    # ----------------------------
-    # Pull median demand/fulfilled/fill-rate (unchanged keys)
-    # ----------------------------
-    demand_med = _dict_grades_weeks_from_row(row_med, "demand_by_week", weeks, GRADES) or {g: np.zeros(weeks) for g in GRADES}
-    fulfilled_med = _dict_grades_weeks_from_row(row_med, "fulfilled_by_week", weeks, GRADES) or {g: np.zeros(weeks) for g in GRADES}
-    fr_med_raw = _dict_grades_weeks_from_row(row_med, "fill_rate_by_week", weeks, GRADES)
+    # --------------------------------------------------------
+    # Demand
+    # --------------------------------------------------------
+    demand_med = None
+    if isinstance(unc_row, dict):
+        demand_med = _dict_grades_weeks_from_row(unc_row, "demand_by_week", weeks, GRADES)
+    if demand_med is None and isinstance(row_med_fallback, dict):
+        demand_med = _dict_grades_weeks_from_row(row_med_fallback, "demand_by_week", weeks, GRADES)
+    if demand_med is None:
+        demand_med = {g: np.zeros(weeks, dtype=float) for g in GRADES}
 
-    # If fill_rate_by_week missing, recompute from demand/fulfilled (keeps same visual)
-    if fr_med_raw is None:
-        fr_med: Dict[str, np.ndarray] = {}
-        for g in GRADES:
-            d = np.asarray(demand_med.get(g, np.zeros(weeks)), dtype=float)
-            f = np.asarray(fulfilled_med.get(g, np.zeros(weeks)), dtype=float)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                r = np.where(d > 1e-9, f / d, 1.0)
-            fr_med[g] = np.clip(r, 0.0, 1.0)
+    # --------------------------------------------------------
+    # Fill rate uncertainty
+    # --------------------------------------------------------
+    fr_med: Dict[str, np.ndarray] = {g: np.zeros(weeks, dtype=float) for g in GRADES}
+    fr_min: Optional[Dict[str, np.ndarray]] = None
+    fr_max: Optional[Dict[str, np.ndarray]] = None
+
+    if isinstance(unc_row, dict):
+        fr_med_u = _dict_grades_weeks_from_row(unc_row, "fill_rate_median_by_week", weeks, GRADES)
+        fr_min_u = _dict_grades_weeks_from_row(unc_row, "fill_rate_min_by_week", weeks, GRADES)
+        fr_max_u = _dict_grades_weeks_from_row(unc_row, "fill_rate_max_by_week", weeks, GRADES)
+
+        if fr_med_u is not None:
+            fr_med = fr_med_u
+        fr_min = fr_min_u
+        fr_max = fr_max_u
+
     else:
-        fr_med = {g: np.clip(np.asarray(fr_med_raw.get(g, np.zeros(weeks)), dtype=float), 0.0, 1.0) for g in GRADES}
+        if isinstance(row_med_fallback, dict):
+            fr_med_raw = _dict_grades_weeks_from_row(row_med_fallback, "fill_rate_by_week", weeks, GRADES)
+            if fr_med_raw is not None:
+                fr_med = {g: np.clip(np.asarray(fr_med_raw.get(g, np.zeros(weeks)), dtype=float), 0.0, 1.0) for g in GRADES}
 
-    # ----------------------------
-    # (DATA FEED FIX #1) Inventory "flow" series
-    # Use inflow_by_week if available; otherwise fall back to whatever storage reported.
-    # ----------------------------
-    inflow_by_week = _extract_weekly_inflow_by_grade(sim_results, year_sel, weeks)
+        if isinstance(row_min_fallback, dict):
+            fr_min_raw = _dict_grades_weeks_from_row(row_min_fallback, "fill_rate_by_week", weeks, GRADES)
+            if fr_min_raw is not None:
+                fr_min = {g: np.clip(np.asarray(fr_min_raw.get(g, np.zeros(weeks)), dtype=float), 0.0, 1.0) for g in GRADES}
 
-    inv_med_for_plots: Optional[Dict[str, np.ndarray]] = _dict_grades_weeks_from_row(row_med, "inventory_by_week", weeks, ALL_GRADES)
+        if isinstance(row_max_fallback, dict):
+            fr_max_raw = _dict_grades_weeks_from_row(row_max_fallback, "fill_rate_by_week", weeks, GRADES)
+            if fr_max_raw is not None:
+                fr_max = {g: np.clip(np.asarray(fr_max_raw.get(g, np.zeros(weeks)), dtype=float), 0.0, 1.0) for g in GRADES}
 
-    if inflow_by_week is not None:
-        inv_flow = _compute_flow_inventory_by_week(inflow_by_week, fulfilled_med, weeks=weeks)
-
-        # Replace ONLY the saleable grades with flowed inventory (keeps same plot structure)
-        # Waste can still come from storage if present; if not, set 0.
-        inv_fixed: Dict[str, np.ndarray] = {}
-        for g in ALL_GRADES:
-            if g in GRADES:
-                inv_fixed[g] = inv_flow[g]
-            else:
-                if inv_med_for_plots is not None and g in inv_med_for_plots:
-                    inv_fixed[g] = np.asarray(inv_med_for_plots[g], dtype=float)
-                else:
-                    inv_fixed[g] = np.zeros(weeks, dtype=float)
-        inv_med_for_plots = inv_fixed
-
-
-    
-    # ----------------------------
-    # (kept) Quality hist + whiskers, selected by week slider
-    # (DATA FEED FIX #2) ensure min/max are from SAME week_sel as median
-    # ----------------------------
-    invq_med_2d = _safe_np_2d(row_med.get("inventory_quality_hist_by_week", None))
-    invq_min_2d = _safe_np_2d(row_min.get("inventory_quality_hist_by_week", None)) if isinstance(row_min, dict) else None
-    invq_max_2d = _safe_np_2d(row_max.get("inventory_quality_hist_by_week", None)) if isinstance(row_max, dict) else None
-
-    if invq_med_2d is None:
-        st.info("Inventory quality histogram unavailable.")
-        return
-
-    Tmed = int(invq_med_2d.shape[0])
-    week_i = int(np.clip(week_sel, 0, max(0, Tmed - 1)))
-
-    med_vec = invq_med_2d[week_i, :]
-
-    # ✅ align min/max to the SAME week index
+    # --------------------------------------------------------
+    # Inventory quality histogram uncertainty
+    # --------------------------------------------------------
+    med_vec = None
     min_vec = None
-    if invq_min_2d is not None and invq_min_2d.shape[1] == invq_med_2d.shape[1]:
-        w = int(np.clip(week_i, 0, int(invq_min_2d.shape[0]) - 1))
-        min_vec = invq_min_2d[w, :]
-
     max_vec = None
-    if invq_max_2d is not None and invq_max_2d.shape[1] == invq_med_2d.shape[1]:
-        w = int(np.clip(week_i, 0, int(invq_max_2d.shape[0]) - 1))
-        max_vec = invq_max_2d[w, :]
+
+    if isinstance(unc_row, dict):
+        invq_med_2d = _safe_np_2d(unc_row.get("inventory_quality_hist_median_by_week", None))
+        invq_min_2d = _safe_np_2d(unc_row.get("inventory_quality_hist_min_by_week", None))
+        invq_max_2d = _safe_np_2d(unc_row.get("inventory_quality_hist_max_by_week", None))
+
+        if invq_med_2d is not None:
+            Tmed = int(invq_med_2d.shape[0])
+            week_i = int(np.clip(week_sel, 0, max(0, Tmed - 1)))
+            med_vec = invq_med_2d[week_i, :]
+
+            if invq_min_2d is not None and invq_min_2d.shape[1] == invq_med_2d.shape[1]:
+                w = int(np.clip(week_i, 0, int(invq_min_2d.shape[0]) - 1))
+                min_vec = invq_min_2d[w, :]
+
+            if invq_max_2d is not None and invq_max_2d.shape[1] == invq_med_2d.shape[1]:
+                w = int(np.clip(week_i, 0, int(invq_max_2d.shape[0]) - 1))
+                max_vec = invq_max_2d[w, :]
+
+    if med_vec is None:
+        invq_med_2d = _safe_np_2d(row_med_fallback.get("inventory_quality_hist_by_week", None)) if isinstance(row_med_fallback, dict) else None
+        invq_min_2d = _safe_np_2d(row_min_fallback.get("inventory_quality_hist_by_week", None)) if isinstance(row_min_fallback, dict) else None
+        invq_max_2d = _safe_np_2d(row_max_fallback.get("inventory_quality_hist_by_week", None)) if isinstance(row_max_fallback, dict) else None
+
+        if invq_med_2d is None:
+            st.info("Inventory quality histogram unavailable.")
+            return
+
+        Tmed = int(invq_med_2d.shape[0])
+        week_i = int(np.clip(week_sel, 0, max(0, Tmed - 1)))
+        med_vec = invq_med_2d[week_i, :]
+
+        if invq_min_2d is not None and invq_min_2d.shape[1] == invq_med_2d.shape[1]:
+            w = int(np.clip(week_i, 0, int(invq_min_2d.shape[0]) - 1))
+            min_vec = invq_min_2d[w, :]
+
+        if invq_max_2d is not None and invq_max_2d.shape[1] == invq_med_2d.shape[1]:
+            w = int(np.clip(week_i, 0, int(invq_max_2d.shape[0]) - 1))
+            max_vec = invq_max_2d[w, :]
 
     fig_q = _colored_gradeband_hist_with_whiskers(
         inv_med=med_vec,
@@ -3251,26 +3176,11 @@ def render_storage_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> N
         title="Inventory quality distribution",
         legend_side="right",
     )
-    st.plotly_chart(fig_q, use_container_width=True, config={"displayModeBar": False}, key=f"stor_q_{year_sel}_{week_i}")
+    st.plotly_chart(fig_q, use_container_width=True, config={"displayModeBar": False}, key=f"stor_q_{year_sel}_{week_sel}")
 
-
-# ----------------------------
-    # (kept) Weekly fill-rate plot (median/min/max)
-    #   Min/max are read from detail runs if present. If present but wrong shape, align + clip.
-    # ----------------------------
-    fr_min: Optional[Dict[str, np.ndarray]] = None
-    fr_max: Optional[Dict[str, np.ndarray]] = None
-
-    if isinstance(row_min, dict):
-        fr_min_raw = _dict_grades_weeks_from_row(row_min, "fill_rate_by_week", weeks, GRADES)
-        if fr_min_raw is not None:
-            fr_min = {g: np.clip(np.asarray(fr_min_raw.get(g, np.zeros(weeks)), dtype=float), 0.0, 1.0) for g in GRADES}
-
-    if isinstance(row_max, dict):
-        fr_max_raw = _dict_grades_weeks_from_row(row_max, "fill_rate_by_week", weeks, GRADES)
-        if fr_max_raw is not None:
-            fr_max = {g: np.clip(np.asarray(fr_max_raw.get(g, np.zeros(weeks)), dtype=float), 0.0, 1.0) for g in GRADES}
-
+    # --------------------------------------------------------
+    # Weekly fill-rate plot
+    # --------------------------------------------------------
     fig_fr = _fillrate_weekly_median_min_max_plot(
         T=weeks,
         tickvals=tickvals,
@@ -3283,40 +3193,27 @@ def render_storage_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> N
     )
     st.plotly_chart(fig_fr, use_container_width=True, config={"displayModeBar": False}, key=f"stor_fr_{year_sel}")
 
-
-
-    # ----------------------------
-    # (kept) Demand cycle plot (same visual concept)
-    # If you had a different demand plot function originally, keep it and just feed demand_med.
-    # ----------------------------
-    fig_dem = _demand_cycle_plot(demand_med, weeks=weeks, tickvals=tickvals, ticktext=ticktext, title="Demand cycle")
+    # --------------------------------------------------------
+    # Demand cycle plot
+    # --------------------------------------------------------
+    fig_dem = _demand_cycle_plot(
+        demand_med,
+        weeks=weeks,
+        tickvals=tickvals,
+        ticktext=ticktext,
+        title="Demand cycle",
+    )
     st.plotly_chart(fig_dem, use_container_width=True, config={"displayModeBar": False}, key=f"stor_dem_{year_sel}")
 
-    # ----------------------------
-    # NOTE:
-    # Any other existing visuals you had BELOW this point should remain as-is.
-    # The only intended change is:
-    #   - when plotting inventory_by_week (if you do), use inv_med_for_plots (flow-corrected)
-    #     instead of row_med["inventory_by_week"].
-    #
-    # If your original code already plots inventory_by_week, replace its data source with:
-    #   inv_med_for_plots (median)
-    #   and similarly min/max if you want envelopes (same pattern).
-    # ----------------------------
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
+    # --------------------------------------------------------
+    # Cumulative cost vs cumulative revenue plot
+    # --------------------------------------------------------
+    cost_rev_df = _build_cost_revenue_by_year(config, sim_results)
+    fig_cr = _cost_vs_revenue_plot(cost_rev_df)
+    if fig_cr is None:
+        st.info("Cost vs revenue unavailable.")
+    else:
+        st.plotly_chart(fig_cr, use_container_width=True, config={"displayModeBar": False}, key="stor_cost_revenue")
 
 
 
@@ -3362,7 +3259,9 @@ def render_storage_tab(config: Dict[str, Any], sim_results: Dict[str, Any]) -> N
 #        - Model median = blue
 #        - Red band = median down to min
 #        - Green band = median up to max
-#        - Correlation 1:1 line = white
+#        - Correlation 1:1 line = white dotted
+#        - Model correlation line = blue dotted
+#        - Correlation legend moved to top beside title area
 #   ✅ Validation table:
 #        - Only R, R², MAPE (%), Bias (Model - DEFRA)
 #        - R/R² colour scale:
@@ -3379,6 +3278,13 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
+
+def _get_df(sim_results: Dict[str, Any], key: str) -> pd.DataFrame:
+    val = sim_results.get(key, pd.DataFrame())
+    if isinstance(val, pd.DataFrame):
+        return val.copy()
+    return pd.DataFrame()
 
 
 def _num_series(df: pd.DataFrame, col: str) -> pd.Series:
@@ -3512,7 +3418,7 @@ def _macro_band_figure(
             fill="tonexty",
             fillcolor="rgba(255,0,0,0.18)",
             name="Min",
-            hovertemplate="Year=%{x}<br>Median=%{y:.3g}<extra></extra>",
+            hovertemplate="Year=%{x}<br>Min=%{y:.3g}<extra></extra>",
         )
     )
 
@@ -3537,8 +3443,8 @@ def _macro_band_figure(
             y=med,
             mode="lines+markers",
             name=model_name,
-            line=dict(width=3, color="blue"),
-            marker=dict(color="blue"),
+            line=dict(width=3, color="light blue"),
+            marker=dict(color="light blue"),
             hovertemplate="Year=%{x}<br>Model median=%{y:.3g}<extra></extra>",
         )
     )
@@ -3584,9 +3490,11 @@ def _correlation_figure(
       y = model
 
     Requested changes:
-      - 1:1 line white
-      - no year text labels on blue dots
-      - no legend
+      - keep perfect 1:1 line
+      - perfect line = dotted white
+      - add model best-fit / correlation line = dotted blue
+      - move legend to top beside title area
+      - no year text labels on dots
       - no R / R² in title
     """
     x = np.asarray(observed_vals, dtype=float)
@@ -3606,8 +3514,15 @@ def _correlation_figure(
             xaxis_title=x_label,
             yaxis_title=y_label,
             height=360,
-            margin=dict(l=55, r=15, t=55, b=45),
-            showlegend=False,
+            margin=dict(l=55, r=15, t=80, b=45),
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="left",
+                x=0.35,
+            ),
         )
         return fig
 
@@ -3617,6 +3532,7 @@ def _correlation_figure(
     line_min = xy_min - pad
     line_max = xy_max + pad
 
+    # Scatter points
     fig.add_trace(
         go.Scatter(
             x=x,
@@ -3624,9 +3540,10 @@ def _correlation_figure(
             mode="markers",
             marker=dict(
                 size=9,
-                color="blue",
+                color="light blue",
                 line=dict(width=1, color="black"),
             ),
+            name="Model points",
             showlegend=False,
             hovertemplate=(
                 "Year=%{customdata}<br>"
@@ -3637,25 +3554,52 @@ def _correlation_figure(
         )
     )
 
+    # Perfect 1:1 line (white dotted)
     fig.add_trace(
         go.Scatter(
             x=[line_min, line_max],
             y=[line_min, line_max],
             mode="lines",
-            line=dict(color="white", dash="dash", width=2),
-            showlegend=False,
+            line=dict(color="black", dash="dot", width=2),
+            name="Perfect correlation",
+            showlegend=True,
             hoverinfo="skip",
         )
     )
+
+    # Model best-fit line (blue dotted)
+    if x.size >= 2 and not np.allclose(x, x[0]):
+        slope, intercept = np.polyfit(x, y, 1)
+        fit_x = np.array([line_min, line_max], dtype=float)
+        fit_y = slope * fit_x + intercept
+
+        fig.add_trace(
+            go.Scatter(
+                x=fit_x,
+                y=fit_y,
+                mode="lines",
+                line=dict(color="blue", dash="dot", width=2),
+                name="Model correlation",
+                showlegend=True,
+                hoverinfo="skip",
+            )
+        )
 
     fig.update_layout(
         title=title,
         xaxis_title=x_label,
         yaxis_title=y_label,
         height=360,
-        margin=dict(l=55, r=15, t=55, b=45),
+        margin=dict(l=55, r=15, t=80, b=45),
         hovermode="closest",
-        showlegend=False,
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0.35,
+        ),
     )
 
     fig.update_xaxes(range=[line_min, line_max])
@@ -3908,8 +3852,6 @@ def render_macro_overview_tab(sim_results: Dict[str, Any]) -> None:
         defra_years = defra["season_year"].to_numpy(dtype=int)
     else:
         defra_years = None
-
-
 
     # --------------------------------------------------------
     # 1) Yield plot
