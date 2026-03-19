@@ -85,7 +85,6 @@ def _sidebar_config() -> Dict[str, Any]:
 
     sim_mode = st.sidebar.radio(
         "Select Simulation Mode",
-        ["Micro (Single Orchard)", "Macro (Multiple Orchards)", "Digital Twin (Custom Micro)"],
         ["Micro (Single Orchard)", "Macro (Multiple Orchards)", "Digital Shadow (Custom Micro)"],
         index=0,
     )
