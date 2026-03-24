@@ -232,7 +232,7 @@ def build_sidebar_config(sim_mode: str, mc_runs: int) -> Dict[str, Any]:
     mode = str(sim_mode or "").strip()
     is_micro = (mode == "Micro (Single Orchard)")
     is_macro = (mode == "Macro (Multiple Orchards)")
-    is_dt = ("Digital Twin" in mode)
+    is_dt = ("Digital Shadow" in mode)
 
     if is_micro or is_dt:
         cfg.update(dict(MICRO_FIXED_CONFIG))
@@ -244,7 +244,7 @@ def build_sidebar_config(sim_mode: str, mc_runs: int) -> Dict[str, Any]:
         if not names:
             st.sidebar.error(
                 f"No templates found in: {TEMPLATE_FOLDER}\n\n"
-                "Run Digital Twin and save a template, then come back here."
+                "Run Digital Shadow and save a template, then come back here."
             )
             template_name = None
         else:
@@ -269,7 +269,7 @@ def build_sidebar_config(sim_mode: str, mc_runs: int) -> Dict[str, Any]:
         cfg["micro_template_name"] = None
 
     if is_dt:
-        st.sidebar.subheader("Digital Twin — Module Inputs")
+        st.sidebar.subheader("Digital Shadow — Module Inputs")
 
         eff = dict(cfg)
 
@@ -1096,7 +1096,7 @@ def load_macro_weather_templates(
     if not names:
         raise RuntimeError(
             f"No macro templates found in: {MACRO_TEMPLATE_FOLDER}\n\n"
-            "Run Digital Twin for each location and Save template, then copy/move the template files into this folder."
+            "Run Digital Shadow for each location and Save template, then copy/move the template files into this folder."
         )
 
     wc_by_point: Dict[str, Dict[str, Any]] = {}
